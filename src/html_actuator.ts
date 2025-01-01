@@ -160,6 +160,13 @@ export class HTMLActuator {
     HTMLActuator.scoreContainer.textContent = HTMLActuator.score.toString()
 
     // Lab 4: Animate the score update
+    if (difference > 0) {
+      const addition = document.createElement('div')
+      addition.classList.add('score-addition')
+      addition.textContent = '+' + difference
+
+      HTMLActuator.scoreContainer.appendChild(addition)
+    }
   }
 
   /**
