@@ -7,7 +7,8 @@ describe('KeyboardInputManager', () => {
 
   describe('todo', () => {
     it('Create some unit tests', async () => {
-      expect(true).toBe(true)
+      // Lab 3: Git Bisect
+      expect(true).toBe(false)
     })
   })
 })
