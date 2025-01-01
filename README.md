@@ -57,3 +57,7 @@ repository.
 ## Controls
 
 Use the arrow keys to move the tiles. Matching tiles merge when they touch.
+
+## Class Baseline
+
+The `lab-baseline` tag marks the last release known to pass its tests.
