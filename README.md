@@ -53,3 +53,7 @@ Classroom repositories are provisioned, not generated from a template. See:
 
 This repository is a fork of the [2048](https://github.com/gabrielecirulli/2048)
 repository.
+
+## Controls
+
+Use the arrow keys to move the tiles. Matching tiles merge when they touch.
