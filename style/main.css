@@ -95,7 +95,7 @@ h1.title {
 .score-container .score-addition,
 .best-container .score-addition {
   position: absolute;
-  right: 42px;
+  right: 30px;
   color: red;
   font-size: 25px;
   line-height: 25px;
