@@ -10,6 +10,7 @@
     "format:check": "npx prettier --check . --config .prettierrc.yml",
     "lint": "npx eslint . -c eslint.config.mjs",
     "package": "npx rollup --config rollup.config.ts --configPlugin @rollup/plugin-typescript",
+    "watch": "npm run package:watch",
     "package:watch": "npx rollup --config rollup.config.ts --configPlugin @rollup/plugin-typescript --watch",
     "provision": "node --import ./tools/provisioning/register.mjs tools/provisioning/cli.ts",
     "test": "node --experimental-vm-modules --no-warnings node_modules/jest/bin/jest.js",
