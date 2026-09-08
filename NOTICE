@@ -1,0 +1,19 @@
+GitHub Intermediate training materials
+
+Mirror import date: 2026-09-08
+
+Import source:
+  https://github.com/mharm-msft/gh-github-intermediate-template
+  Source main commit: e57fcbf8005f944e4f3fa65e52edc005d226cf15
+
+Original training repository:
+  https://github.com/githubschool/gh-github-intermediate-template
+
+The import source is a fork of the original training repository. This repository
+is an independent mirror-import, not a GitHub fork. Full Git history is retained;
+GitHub issues, pull requests, releases, and fork relationships are not imported.
+
+The upstream training material is distributed under the MIT License.
+Copyright 2024 GitHub. The original LICENSE file is retained unchanged.
+
+This provenance notice was added before repairs to the imported material.
