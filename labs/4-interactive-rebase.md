@@ -10,6 +10,8 @@ reprioritized. This feature was partially completed, and then put on hold. The
 branch is still present, so let's bring it back up to date and deliver that
 feature.
 
+Commit IDs in the examples below are illustrative; your commit IDs will differ.
+
 ## Task 1: Checkout the Feature Branch
 
 1. Checkout the feature branch
@@ -29,7 +31,7 @@ feature.
 
    ```plain
    ...
-   * a4f1x35 Update scoreboard size
+   * a4f1c35 Update scoreboard size
    * f723e2f Remove comment
    * d2b828f Revert change
    | * 0f3cb0b (HEAD -> feature/animate-score) Animate score update
@@ -52,7 +54,7 @@ feature.
 
    ```plain
    pick 0f3cb0b Animate score update
-   pick a4f1x35 Update scoreboard size
+   pick a4f1c35 Update scoreboard size
    pick f723e2f Remove comment
    pick d2b828f Revert change
    ```
@@ -66,7 +68,7 @@ feature.
 
    ```plain
    reword 0f3cb0b Animate score update
-   squash a4f1x35 Update scoreboard size
+   squash a4f1c35 Update scoreboard size
    squash f723e2f Remove comment
    squash d2b828f Revert change
    ```
@@ -140,5 +142,5 @@ meeting chat.
 The code changes for this lab can be found in the `solutions` directory.
 
 - Copy the contents of
-  [`solutions/4-interactive-rebase/html_actuator.ts`](../solutions/4-interactive-rebase/html_actuator)
+  [`solutions/4-interactive-rebase/html_actuator.ts`](../solutions/4-interactive-rebase/html_actuator.ts)
   and replace the contents of [`src/html_actuator.ts`](../src/html_actuator.ts)

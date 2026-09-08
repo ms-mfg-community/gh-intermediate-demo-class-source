@@ -28,7 +28,6 @@ the API.
 1. Click the workflow run
 1. Click the **Continuous Integration** step
 1. Review the output of each of the following steps
-
    - Checkout
    - Setup Node.js
    - Install Dependencies

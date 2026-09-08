@@ -40,14 +40,11 @@ jobs:
       - name: Check Format
         id: format-check
         run: npm run format:check
-        continue-on-error: true
 
       - name: Lint
         id: lint
         run: npm run lint
-        continue-on-error: true
 
       - name: Test
         id: test
         run: npm run ci-test
-        continue-on-error: true

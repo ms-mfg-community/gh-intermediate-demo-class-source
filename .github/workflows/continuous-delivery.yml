@@ -1,5 +1,5 @@
 # When a PR is merged, or when run manually, this workflow will build and
-# package the GitHub Pages artifacts.
+# package the GitHub Pages artifacts. Only version-changing pushes create releases.
 name: Continuous Delivery
 
 on:
@@ -24,6 +24,9 @@ jobs:
       - name: Checkout
         id: checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
 
       - name: Setup Node.js
         id: setup-node
@@ -46,16 +49,57 @@ jobs:
         with:
           path: .
 
+      - name: Check Version Change
+        id: version
+        if: github.event_name == 'push'
+        env:
+          BEFORE: ${{ github.event.before }}
+          AFTER: ${{ github.sha }}
+        run: |
+          node --input-type=module <<'NODE'
+          import { execFileSync } from 'node:child_process'
+          import { appendFileSync } from 'node:fs'
+
+          const { BEFORE, AFTER, GITHUB_OUTPUT } = process.env
+          for (const [name, ref] of Object.entries({ BEFORE, AFTER })) {
+            if (!/^[0-9a-f]{40}$/.test(ref ?? '')) {
+              throw new Error(`${name} must be a full commit SHA`)
+            }
+          }
+          if (!GITHUB_OUTPUT) {
+            throw new Error('GITHUB_OUTPUT must be set')
+          }
+
+          const versionAt = (ref) => {
+            const manifest = JSON.parse(
+              execFileSync('git', ['show', `${ref}:package.json`], {
+                encoding: 'utf8'
+              })
+            )
+            if (typeof manifest?.version !== 'string' || !manifest.version.trim()) {
+              throw new Error(`package.json at ${ref} must have a nonempty string version`)
+            }
+            return manifest.version
+          }
+
+          const current = versionAt(AFTER)
+          // A new destination branch has no previous version to release against.
+          const changed = BEFORE !== '0'.repeat(40) && versionAt(BEFORE) !== current
+          appendFileSync(GITHUB_OUTPUT, `changed=${changed}\n`)
+          NODE
+
       - name: Tag
         id: tag
+        if: steps.version.outputs.changed == 'true'
         uses: issue-ops/semver@v2
         with:
           manifest-path: package.json
           workspace: ${{ github.workspace }}
-          ref: main
+          ref: ${{ github.sha }}
 
       - name: Create Release
         id: release
+        if: steps.version.outputs.changed == 'true'
         uses: issue-ops/releaser@v2
         with:
           tag: v${{ steps.tag.outputs.version }}
