@@ -591,6 +591,7 @@ describe('golden fixture: rendering a class copy', () => {
     ])
     expect(checks.find((step) => step.id === 'format-check')?.status).toBe(0)
     expect(checks.find((step) => step.id === 'lint')?.status).toBe(0)
+    expect(checks.find((step) => step.id === 'test')?.status).not.toBe(0)
   }, 900_000)
 
   it('substitutes the lab prose a learner reads as configuration', () => {
