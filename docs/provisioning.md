@@ -276,8 +276,12 @@ Confirm each with the customer. None may be assumed.
 
 Everything in sections 3 and 5 is exercised by the test suite using real
 temporary Git repositories and a local fake GitHub service. No test contacts a
-network. The suite also builds a fixture, runs the classroom project's own Jest
-suite inside it, and requires it to fail before Lab 3 and pass afterwards.
+network. The suite also builds a fixture and runs the classroom project's own
+continuous integration checks inside it, in the order
+`.github/workflows/continuous-integration.yml` runs them: `Check Format` and
+`Lint` must pass and `Test` must fail at the learner's starting point, and all
+three must pass once the Lab 3 solution is applied. The checks are asserted by
+exit status, so the result does not depend on log wording.
 
 **No part of this tool has been run against GitHub.** The request shapes were
 checked against the GitHub REST reference on 2026-09-09, and the decision logic

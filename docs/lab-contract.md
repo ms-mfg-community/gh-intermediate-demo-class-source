@@ -76,9 +76,35 @@ maintenance branch, whose continuous integration must stay green. A test asserts
 that the marker is absent from the working tree of this repository.
 
 Both halves of this promise are executed, not asserted from the lab text: a test
-clones the built fixture, runs the project's own Jest suite and requires it to
-fail, then applies `solutions/3-git-bisect/keyboard_input_manager.test.ts` and
-requires the same suite to pass.
+clones the built fixture and runs the checks
+`.github/workflows/continuous-integration.yml` defines, **in workflow order**,
+reading that order from the workflow rather than restating it. At the learner's
+starting `HEAD`, `Check Format` and `Lint` pass and `Test` fails. The test then
+applies `solutions/3-git-bisect/keyboard_input_manager.test.ts` and requires all
+three checks to pass. Every assertion is on an exit status, never on log text.
+
+### Red for the right reason
+
+The pipeline runs `Check Format`, then `Lint`, then `Test`, and stops at the
+first failure. A formatting or lint failure at the starting point would
+therefore stop the run before `Test`, and the class would see a formatting error
+where the curriculum promises a failing test — the Lab 3 exercise would never
+run.
+
+The builder's own generated content is consequently held to the repository's
+Prettier configuration. `.prettierrc.yml` sets `proseWrap: always`, so Prettier
+owns line breaks in Markdown prose; generated prose is written unwrapped, and
+the builder refuses to build if a generated line would exceed the configured
+`printWidth`. Every file the builder writes is normalised to exactly one
+trailing newline.
+
+This holds for **every commit the builder seeds** — the six on `main` and the
+commits on all five seeded branches — so a learner who stops mid-bisect on a
+seeded commit and runs the checks sees the same result. It does **not** hold for
+the imported upstream history below `lab-baseline`, which contains commits that
+predate this configuration and do not satisfy it. Those commits are preserved
+verbatim for provenance and are not rewritten. Lab 3 asks the learner to grep at
+each bisect step, not to run the pipeline, so this does not affect the exercise.
 
 ## 3. Lab-by-lab contract
 
@@ -180,9 +206,9 @@ change is recorded here rather than made silently.
 
 ## 6. Wiring changes made
 
-Three curriculum artifacts were changed to keep the material consistent with the
+Four curriculum artifacts were changed to keep the material consistent with the
 state the builder produces, plus one README correction. Each is declared here
-rather than applied silently, and the first three are guarded by a test.
+rather than applied silently, and all four are guarded by a test.
 
 ### 6.1 `solutions/8-merge-conflicts/game_manager.ts` reconciled
 
@@ -244,6 +270,24 @@ the start is expected.
 No lab creates or consumes an issue, so the original sentence set an expectation
 the provisioned repository does not meet.
 
+### 6.5 Lab 3 Task 2 worked example diffstat corrected
+
+**Was:** a diffstat showing two files changed, including
+`solutions/3-bisect/keyboard_input_manager.test.ts` with 124 insertions, for a
+total of "126 insertions(+), 8 deletions(-)".
+
+**Now:** the diffstat the seeded commit actually produces —
+`__tests__/keyboard_input_manager.test.ts | 3 ++-`, "1 file changed, 2
+insertions(+), 1 deletion(-)" — with the commit hash marked as illustrative.
+
+The quoted commit was an ancestor of `lab-baseline`, so `git bisect` could never
+report it, and the path `solutions/3-bisect/` does not exist in this repository:
+the solutions directory is `solutions/3-git-bisect/`. A learner comparing the
+printed output against their own would have concluded they had bisected to the
+wrong commit. The hashes and dates in the example still vary between builds, so
+the example now says so; a test compares its file list and magnitudes against
+`git show --stat` of the commit the builder seeds.
+
 ### 6.5 Bisect exit codes
 
 `grep` exits **0 on a match**, and `git bisect` reads exit 0 as **good** — so a
@@ -289,7 +333,8 @@ action per resource, each marked `create`, `satisfied` or `blocked`.
 
 ## 8. Dependencies between labs
 
-- Lab 3 must be completed before Lab 9 shows a green pipeline.
+- Lab 3 must be completed before Lab 9 shows a green pipeline. Until then the
+  pipeline is red at `Test`, having passed `Check Format` and `Lint`.
 - Lab 4 assumes `main` has moved since `feature/animate-score` was created; that
   is true from the moment the class starts and stays true after Lab 3.
 - Lab 8's second merge in each pair only conflicts once the first is merged.

@@ -7,6 +7,7 @@ import {
   symlinkSync,
   writeFileSync
 } from 'node:fs'
+import { createRequire } from 'node:module'
 import { platform, tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -71,34 +72,151 @@ function scratch(name: string): string {
 }
 
 /**
- * Runs the classroom project's own test suite inside a fixture clone.
+ * Reads the classroom project's own continuous integration definition.
  *
- * Invokes Jest the way `npm test` does, but without a shell, so the result
- * reflects what a learner's continuous integration would report.
- *
- * @param repo Repository directory to run in.
- * @returns The exit status and captured output.
+ * The checks below are executed rather than described, so what this file
+ * asserts is what a learner's pipeline would report.
  */
-function runProjectTests(repo: string) {
-  const result = spawnSync(
-    process.execPath,
-    [
-      '--experimental-vm-modules',
-      '--no-warnings',
-      join('node_modules', 'jest', 'bin', 'jest.js'),
-      '--coverage=false',
-      '--reporters=default'
-    ],
-    { cwd: repo, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 }
+const require = createRequire(import.meta.url)
+const { load }: { load: (text: string) => CiWorkflow } = require('js-yaml')
+
+interface CiWorkflow {
+  jobs: Record<string, { steps: { id: string; run?: string }[] }>
+}
+
+/** One continuous integration check, and the npm script the workflow runs. */
+interface CiStep {
+  /** Step identifier in the workflow. */
+  id: string
+  /** Name of the npm script the step runs. */
+  script: string
+}
+
+/**
+ * Reads the checks continuous integration runs, in workflow order.
+ *
+ * Derived from the workflow rather than restated here, so reordering, renaming
+ * or removing a check changes what this file executes. `npm ci` is skipped: it
+ * is an install step rather than a check, and running it would reach the
+ * network.
+ *
+ * @returns The ordered checks.
+ */
+function ciSteps(): CiStep[] {
+  const workflow = load(
+    readFileSync(
+      join(root, '.github', 'workflows', 'continuous-integration.yml'),
+      'utf8'
+    )
   )
 
-  if (result.error) throw result.error
+  return workflow.jobs['continuous-integration'].steps.flatMap((step) => {
+    const script = /^npm run ([\w:-]+)$/.exec((step.run ?? '').trim())?.[1]
 
-  return {
-    status: result.status,
-    stdout: result.stdout ?? '',
-    stderr: result.stderr ?? ''
+    return script === undefined ? [] : [{ id: step.id, script }]
+  })
+}
+
+/**
+ * Resolves a locally installed package's executable entry point.
+ *
+ * Reads the package's own `bin` field rather than `node_modules/.bin`, whose
+ * entries are shell shims on Windows and cannot be spawned without a shell.
+ *
+ * @param name Package name.
+ * @returns Absolute path of the executable's JavaScript entry point.
+ */
+function localBin(name: string): string {
+  const directory = join(root, 'node_modules', name)
+  const manifest = JSON.parse(
+    readFileSync(join(directory, 'package.json'), 'utf8')
+  ) as { bin?: string | Record<string, string> }
+  const bin =
+    typeof manifest.bin === 'string' ? manifest.bin : manifest.bin?.[name]
+
+  if (bin === undefined) throw new Error(`${name} declares no ${name} binary`)
+
+  return join(directory, bin)
+}
+
+/**
+ * Translates an npm script into arguments Node can run without a shell.
+ *
+ * The script text is read from the repository under test, so the command that
+ * runs is the one that repository would run.
+ *
+ * @param repo Repository directory to read `package.json` from.
+ * @param script Name of the npm script.
+ * @returns Arguments to pass to the Node executable.
+ * @throws If the script is absent, or is neither a Node nor an npx invocation.
+ */
+function scriptArguments(repo: string, script: string): string[] {
+  const manifest = JSON.parse(
+    readFileSync(join(repo, 'package.json'), 'utf8')
+  ) as { scripts?: Record<string, string> }
+  const command = manifest.scripts?.[script]
+
+  if (command === undefined)
+    throw new Error(`${repo} defines no ${script} script`)
+
+  const [runner, ...rest] = command.split(/\s+/)
+
+  if (runner === 'node') return rest
+  if (runner === 'npx') return [localBin(rest[0]), ...rest.slice(1)]
+
+  throw new Error(`Cannot run ${script} without a shell: ${command}`)
+}
+
+/** Outcome of one continuous integration check. */
+interface CiResult extends CiStep {
+  /** Exit status of the check. */
+  status: number | null
+}
+
+/**
+ * Runs the repository's continuous integration checks in workflow order.
+ *
+ * Stops at the first non-zero exit, as the workflow does, so the returned list
+ * reports both which checks passed and which check a failure occurred at.
+ *
+ * @param repo Repository directory to run in.
+ * @returns One entry per check that ran, in order.
+ */
+function runCiChecks(repo: string): CiResult[] {
+  const results: CiResult[] = []
+
+  for (const step of ciSteps()) {
+    const result = spawnSync(
+      process.execPath,
+      scriptArguments(repo, step.script),
+      { cwd: repo, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 }
+    )
+
+    if (result.error) throw result.error
+
+    results.push({ ...step, status: result.status })
+    if (result.status !== 0) break
   }
+
+  return results
+}
+
+/**
+ * Clones the fixture and gives it the dependencies its own checks need.
+ *
+ * @param name Directory name for the clone.
+ * @returns Path of the prepared clone.
+ */
+function installedScratch(name: string): string {
+  const repo = scratch(name)
+
+  symlinkSync(
+    join(root, 'node_modules'),
+    join(repo, 'node_modules'),
+    platform() === 'win32' ? 'junction' : 'dir'
+  )
+
+  return repo
 }
 
 describe('golden fixture: provenance and history', () => {
@@ -377,19 +495,31 @@ describe('golden fixture: the classroom project builds and tests', () => {
     ).toContain('tools/provisioning')
   })
 
+  it('runs its checks in the order continuous integration runs them', () => {
+    expect(ciSteps().map((step) => step.id)).toEqual([
+      'format-check',
+      'lint',
+      'test'
+    ])
+  })
+
   it('starts red on the seeded defect and goes green once Lab 3 is done', () => {
-    const repo = scratch('lab3')
+    const repo = installedScratch('lab3')
 
-    symlinkSync(
-      join(root, 'node_modules'),
-      join(repo, 'node_modules'),
-      platform() === 'win32' ? 'junction' : 'dir'
-    )
+    // The whole ordered pipeline is executed, not just the test step. `Check
+    // Format` runs before `Test`, so generated content that Prettier would
+    // rewrite fails the pipeline early and hides the defect Lab 3 exists to
+    // find. Asserting by exit code keeps this independent of log wording.
+    const before = runCiChecks(repo)
 
-    // The learner's starting point must fail, because Lab 3 exists to repair
-    // it, and Lab 3 Task 7 promises the pipeline recovers afterwards. Both
-    // halves are executed here rather than asserted from the lab text.
-    expect(runProjectTests(repo).status).not.toBe(0)
+    expect(before.map((step) => step.id)).toEqual([
+      'format-check',
+      'lint',
+      'test'
+    ])
+    expect(before.find((step) => step.id === 'format-check')?.status).toBe(0)
+    expect(before.find((step) => step.id === 'lint')?.status).toBe(0)
+    expect(before.find((step) => step.id === 'test')?.status).not.toBe(0)
 
     writeFileSync(
       join(repo, BISECT_TARGET),
@@ -404,9 +534,12 @@ describe('golden fixture: the classroom project builds and tests', () => {
       )
     )
 
-    const after = runProjectTests(repo)
-    expect(`${after.stdout}\n${after.stderr}`).not.toContain(BISECT_MARKER)
-    expect(after.status).toBe(0)
+    // Lab 3 Task 7 promises the pipeline recovers, so every check must pass.
+    expect(runCiChecks(repo).map((step) => [step.id, step.status])).toEqual([
+      ['format-check', 0],
+      ['lint', 0],
+      ['test', 0]
+    ])
   }, 900_000)
 })
 
@@ -487,6 +620,24 @@ describe('curriculum artifacts match the contract', () => {
     expect(lab).toContain(`git bisect good ${BISECT_ANCHOR_TAG}`)
     expect(lab).toContain(BISECT_MARKER)
     expect(lab).not.toContain('the one labeled `Initial commit`')
+  })
+
+  it('prints the real diffstat in the Lab 3 worked example', () => {
+    const lab = read('labs', '3-git-bisect.md')
+    const stat = git(fixture.path, [
+      'show',
+      '--stat=200',
+      '--format=',
+      fixture.bisect.badCommit
+    ])
+
+    // The worked example tells the learner what `git bisect` will print, so
+    // its file list and magnitudes are compared against the commit the builder
+    // actually seeds rather than transcribed by hand.
+    const lines = stat.split('\n').filter((line) => line.trim() !== '')
+
+    expect(lines.length).toBeGreaterThan(0)
+    for (const line of lines) expect(lab).toContain(line.trim())
   })
 
   it.each([...REBASE_COMMITS])(

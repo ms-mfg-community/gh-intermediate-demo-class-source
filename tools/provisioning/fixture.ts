@@ -117,6 +117,12 @@ function commitFiles(
 /**
  * Rewrites a tracked file through a transform and commits the result.
  *
+ * The result is normalised to exactly one trailing newline. Prettier enforces
+ * that, and the classroom repository runs `npm run format:check` before it runs
+ * its tests, so a generated file ending in a blank line would fail continuous
+ * integration on formatting and hide the instructional test failure Lab 3 is
+ * built around.
+ *
  * @param repo Repository directory.
  * @param subject Commit subject.
  * @param path Repository-relative path of the file to edit.
@@ -136,7 +142,55 @@ function commitEdit(
   if (current === undefined)
     throw new Error(`Cannot edit ${path}: absent at HEAD`)
 
-  return commitFiles(repo, subject, { [path]: `${edit(current)}\n` }, timestamp)
+  return commitFiles(
+    repo,
+    subject,
+    { [path]: `${edit(current).trimEnd()}\n` },
+    timestamp
+  )
+}
+
+/**
+ * Line width the repository's Prettier configuration wraps prose to.
+ *
+ * Kept in step with `printWidth` in `.prettierrc.yml`. A generated Markdown
+ * line wider than this is reflowed by `prettier --check`, which fails the
+ * `Check Format` step of the classroom repository's own pipeline.
+ */
+const PRINT_WIDTH = 80
+
+/**
+ * Appends a Markdown section, laid out the way Prettier would lay it out.
+ *
+ * `.prettierrc.yml` sets `proseWrap: always`, so Prettier owns the line breaks
+ * in Markdown prose: it joins a hand-wrapped paragraph back onto one line when
+ * that line fits, and splits it when it does not. Generated prose is therefore
+ * written unwrapped and checked against `printWidth` here, so the fixture
+ * cannot emit a paragraph Prettier would rewrite.
+ *
+ * @param text Current file contents.
+ * @param heading Section heading, without the leading `##`.
+ * @param prose Paragraph text, as a single unwrapped line.
+ * @returns The file contents with the section appended.
+ * @throws If a generated line would exceed the configured print width.
+ */
+function appendMarkdownSection(
+  text: string,
+  heading: string,
+  prose: string
+): string {
+  const section = `## ${heading}\n\n${prose}`
+
+  for (const line of section.split('\n'))
+    if (line.length > PRINT_WIDTH)
+      throw new Error(
+        `Refusing to build: generated Markdown line is ${line.length} ` +
+          `characters, over the ${PRINT_WIDTH}-character print width Prettier ` +
+          `enforces, so the classroom repository would fail its own format ` +
+          `check: ${JSON.stringify(line)}`
+      )
+
+  return `${text.trimEnd()}\n\n${section}\n`
 }
 
 /**
@@ -334,7 +388,11 @@ function seedMainHistory(
     controls,
     'README.md',
     (text) =>
-      `${text.trimEnd()}\n\n## Controls\n\nUse the arrow keys to move the tiles. Matching tiles merge when they\ntouch.\n`,
+      appendMarkdownSection(
+        text,
+        'Controls',
+        'Use the arrow keys to move the tiles. Matching tiles merge when they touch.'
+      ),
     (clock += 60)
   )
 
@@ -367,7 +425,11 @@ function seedMainHistory(
     baseline,
     'README.md',
     (text) =>
-      `${text.trimEnd()}\n\n## Class Baseline\n\nThe \`${BISECT_ANCHOR_TAG}\` tag marks the last release known to pass its\ntests.\n`,
+      appendMarkdownSection(
+        text,
+        'Class Baseline',
+        `The \`${BISECT_ANCHOR_TAG}\` tag marks the last release known to pass its tests.`
+      ),
     (clock += 60)
   )
 
