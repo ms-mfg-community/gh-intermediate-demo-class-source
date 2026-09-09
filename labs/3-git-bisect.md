@@ -92,19 +92,18 @@ ones.
    specified change.
 
    When the process is complete, Git will output the commit that introduced the
-   change.
+   change. The commit hash below is an example; yours will differ.
 
    ```bash
-   53336f05d7e3d124ed872bbecd38c5cdbcca89be is the first bad commit
-   commit 53336f05d7e3d124ed872bbecd38c5cdbcca89be (HEAD)
-   Author: Nick Alteen <ncalteen@github.com>
-   Date:   Fri Sep 27 13:35:45 2024 -0400
+   3df75e71621bf183439ff58a9c2bb89c30556460 is the first bad commit
+   commit 3df75e71621bf183439ff58a9c2bb89c30556460 (HEAD)
+   Author: Course Fixture Builder <fixture@example.invalid>
+   Date:   Wed Jan 1 00:04:00 2025 +0000
 
        Disable broken test
 
-   __tests__/keyboard_input_manager.test.ts          |  10 ++-------
-   solutions/3-bisect/keyboard_input_manager.test.ts | 124 +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-   2 files changed, 126 insertions(+), 8 deletions(-)
+    __tests__/keyboard_input_manager.test.ts | 3 ++-
+    1 file changed, 2 insertions(+), 1 deletion(-)
    ```
 
 ## Task 3: Finish `git bisect`
