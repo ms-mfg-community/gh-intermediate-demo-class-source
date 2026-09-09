@@ -35,8 +35,8 @@ classroom.
 
 ### Commits appended to `main`
 
-The full imported course history is preserved and remains reachable. Six
-commits are appended on top of it, in this order:
+The full imported course history is preserved and remains reachable. Six commits
+are appended on top of it, in this order:
 
 1. `Remove maintenance tooling tests` — trims the classroom tree
 1. `Add watch script`
@@ -72,14 +72,13 @@ on the next run once the fix is merged.
 
 This failure exists **only in the learner fixture**. It is generated into an
 isolated temporary repository at build time and is never committed to the
-maintenance branch, whose continuous integration must stay green. A test
-asserts that the marker is absent from the working tree of this repository.
+maintenance branch, whose continuous integration must stay green. A test asserts
+that the marker is absent from the working tree of this repository.
 
-Both halves of this promise are executed, not asserted from the lab text: a
-test clones the built fixture, runs the project's own Jest suite and requires
-it to fail, then applies
-`solutions/3-git-bisect/keyboard_input_manager.test.ts` and requires the same
-suite to pass.
+Both halves of this promise are executed, not asserted from the lab text: a test
+clones the built fixture, runs the project's own Jest suite and requires it to
+fail, then applies `solutions/3-git-bisect/keyboard_input_manager.test.ts` and
+requires the same suite to pass.
 
 ## 3. Lab-by-lab contract
 

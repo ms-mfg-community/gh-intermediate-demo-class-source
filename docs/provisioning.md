@@ -63,10 +63,11 @@ The implementation was written and verified on **Node 24.15.0 with npm 10.2.3**.
 
 The provisioning CLI runs TypeScript directly through Node's built-in type
 stripping, so there is no build step. **That requires a newer Node than
-`.node-version` pins:** unflagged type stripping is not available on 22.9.0, so
-`npm run provision` needs Node 22.18 or newer, and was verified on 24.15.0. The
-project's own `npm test`, `npm run lint` and `npm run build` are unaffected and
-still work on the pinned version.
+`.node-version` pins.** Type stripping is not enabled by default on 22.9.0, so
+`npm run provision` will not run there; it was written and verified on 24.15.0.
+If you need to run it on a specific older release, check that release's notes
+for whether type stripping is on by default. The project's own `npm test`,
+`npm run lint` and `npm run package` do not use it and are unaffected.
 
 A small resolution hook (`tools/provisioning/loader.mjs`) maps the repository's
 `./module.js` import specifiers onto their TypeScript sources; it adds no
