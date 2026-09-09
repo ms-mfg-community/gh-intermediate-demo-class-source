@@ -35,17 +35,31 @@ classroom.
 
 ### Commits appended to `main`
 
-The full imported course history is preserved and remains reachable. Five
+The full imported course history is preserved and remains reachable. Six
 commits are appended on top of it, in this order:
 
+1. `Remove maintenance tooling tests` — trims the classroom tree
 1. `Add watch script`
 1. `Document the game controls`
 1. `Disable broken test` — introduces the Lab 3 defect
 1. `Tidy the game rules markup`
 1. `Note the class baseline in the README`
 
-`feature/animate-score` branches from the first of these, so it is four commits
+`feature/animate-score` branches from `Add watch script`, so it is four commits
 behind `main` when the class starts.
+
+### What the classroom tree does not carry
+
+`__tests__/provisioning_fixture.test.ts` and
+`__tests__/provisioning_github.test.ts` are removed by the first seeded commit.
+They exercise the fixture builder, which reads the repository they run in, so in
+a learner's clone they would run under continuous integration and fail
+permanently the moment Lab 1 creates `feature/rules` — the builder correctly
+refuses to seed over a reference a learner creates.
+
+`tools/provisioning` itself is kept, so a customer can provision from the
+delivered bundle. It is never collected by Jest, whose roots are `src/` and
+`__tests__/`.
 
 ## 2. Expected instructional failures
 
@@ -58,8 +72,14 @@ on the next run once the fix is merged.
 
 This failure exists **only in the learner fixture**. It is generated into an
 isolated temporary repository at build time and is never committed to the
-maintenance branch, whose continuous integration must stay green. A test asserts
-that the marker is absent from the working tree of this repository.
+maintenance branch, whose continuous integration must stay green. A test
+asserts that the marker is absent from the working tree of this repository.
+
+Both halves of this promise are executed, not asserted from the lab text: a
+test clones the built fixture, runs the project's own Jest suite and requires
+it to fail, then applies
+`solutions/3-git-bisect/keyboard_input_manager.test.ts` and requires the same
+suite to pass.
 
 ## 3. Lab-by-lab contract
 

@@ -18,8 +18,10 @@ import {
   DEFAULT_BRANCH,
   GAME_MANAGER,
   HTML_ACTUATOR,
+  MAINTENANCE_ONLY_PATHS,
   PLACEHOLDERS,
   REBASE_BRANCH,
+  REBASE_BRANCH_POINT,
   REBASE_COMMITS,
   SEEDED_MAIN_COMMITS,
   detectLearnerRefCollisions,
@@ -296,9 +298,23 @@ function seedMainHistory(
   repo: string,
   timestamp: number
 ): Record<string, string> {
-  const [watch, controls, broken, markup, prerequisites] = SEEDED_MAIN_COMMITS
+  const [trim, watch, controls, broken, markup, baseline] = SEEDED_MAIN_COMMITS
   const commits: Record<string, string> = {}
   let clock = timestamp
+
+  const removable = MAINTENANCE_ONLY_PATHS.filter(
+    (path) => readBlob(repo, 'HEAD', path) !== undefined
+  )
+
+  if (removable.length === 0)
+    throw new Error(
+      `Refusing to build: none of ${MAINTENANCE_ONLY_PATHS.join(', ')} is ` +
+        'present, so the classroom tree cannot be verified as trimmed'
+    )
+
+  git(repo, ['rm', '--quiet', '--', ...removable], { timestamp: (clock += 60) })
+  git(repo, ['commit', '--quiet', '-m', trim], { timestamp: clock })
+  commits[trim] = git(repo, ['rev-parse', 'HEAD'])
 
   commits[watch] = commitEdit(
     repo,
@@ -346,9 +362,9 @@ function seedMainHistory(
     (clock += 60)
   )
 
-  commits[prerequisites] = commitEdit(
+  commits[baseline] = commitEdit(
     repo,
-    prerequisites,
+    baseline,
     'README.md',
     (text) =>
       `${text.trimEnd()}\n\n## Class Baseline\n\nThe \`${BISECT_ANCHOR_TAG}\` tag marks the last release known to pass its\ntests.\n`,
@@ -545,7 +561,7 @@ export function buildGoldenRepository(
   const branches: Record<string, string> = {
     [REBASE_BRANCH.name]: seedRebaseBranch(
       target,
-      mainCommits[SEEDED_MAIN_COMMITS[0]],
+      mainCommits[REBASE_BRANCH_POINT],
       timestamp + 3600
     ),
     ...seedConflictBranches(target, headCommit, timestamp + 7200)

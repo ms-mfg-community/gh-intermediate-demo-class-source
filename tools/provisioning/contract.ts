@@ -160,11 +160,35 @@ export const REBASE_COMMITS = [
 
 /** Commit subjects appended to `main` by the fixture builder, in order. */
 export const SEEDED_MAIN_COMMITS = [
+  'Remove maintenance tooling tests',
   'Add watch script',
   'Document the game controls',
   'Disable broken test',
   'Tidy the game rules markup',
   'Note the class baseline in the README'
+] as const
+
+/**
+ * Commit `feature/animate-score` diverges from.
+ *
+ * Named rather than indexed, so inserting a commit ahead of it cannot silently
+ * change how far behind `main` the Lab 4 branch sits.
+ */
+export const REBASE_BRANCH_POINT = 'Add watch script'
+
+/**
+ * Test files that must not reach a classroom repository.
+ *
+ * They exercise the fixture builder, which reads the repository they run in.
+ * In a learner's clone they would run under continuous integration, take
+ * minutes, and fail permanently the moment Lab 1 creates `feature/rules` —
+ * because the builder correctly refuses to seed over a reference a learner
+ * creates. The tooling itself still ships, so a customer can provision from
+ * the delivered bundle; only its self-tests are trimmed.
+ */
+export const MAINTENANCE_ONLY_PATHS = [
+  '__tests__/provisioning_fixture.test.ts',
+  '__tests__/provisioning_github.test.ts'
 ] as const
 
 /** Subject of the seeded commit that Lab 3 asks the learner to find. */

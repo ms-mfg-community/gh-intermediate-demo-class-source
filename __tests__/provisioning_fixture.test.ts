@@ -1,6 +1,13 @@
 /** @jest-environment node */
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { spawnSync } from 'node:child_process'
+import {
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync
+} from 'node:fs'
+import { platform, tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
@@ -14,6 +21,7 @@ import {
   HTML_ACTUATOR,
   LAB_8_END_STATE,
   LEARNER_CREATED_REFS,
+  MAINTENANCE_ONLY_PATHS,
   REBASE_BRANCH,
   REBASE_COMMITS,
   detectLearnerRefCollisions,
@@ -60,6 +68,37 @@ function scratch(name: string): string {
   git(target, ['checkout', '--quiet', DEFAULT_BRANCH])
 
   return target
+}
+
+/**
+ * Runs the classroom project's own test suite inside a fixture clone.
+ *
+ * Invokes Jest the way `npm test` does, but without a shell, so the result
+ * reflects what a learner's continuous integration would report.
+ *
+ * @param repo Repository directory to run in.
+ * @returns The exit status and captured output.
+ */
+function runProjectTests(repo: string) {
+  const result = spawnSync(
+    process.execPath,
+    [
+      '--experimental-vm-modules',
+      '--no-warnings',
+      join('node_modules', 'jest', 'bin', 'jest.js'),
+      '--coverage=false',
+      '--reporters=default'
+    ],
+    { cwd: repo, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 }
+  )
+
+  if (result.error) throw result.error
+
+  return {
+    status: result.status,
+    stdout: result.stdout ?? '',
+    stderr: result.stderr ?? ''
+  }
 }
 
 describe('golden fixture: provenance and history', () => {
@@ -317,6 +356,58 @@ describe('golden fixture: Lab 8 merge conflicts', () => {
       'static startTiles: number = 2'
     )
   })
+})
+
+describe('golden fixture: the classroom project builds and tests', () => {
+  it.each([...MAINTENANCE_ONLY_PATHS])(
+    'trims %s from the classroom tree',
+    (path) => {
+      expect(readBlob(fixture.path, fixture.headCommit, path)).toBeUndefined()
+    }
+  )
+
+  it('still ships the provisioning tooling for the customer to run', () => {
+    expect(
+      git(fixture.path, [
+        'ls-tree',
+        '--name-only',
+        fixture.headCommit,
+        'tools/'
+      ])
+    ).toContain('tools/provisioning')
+  })
+
+  it('starts red on the seeded defect and goes green once Lab 3 is done', () => {
+    const repo = scratch('lab3')
+
+    symlinkSync(
+      join(root, 'node_modules'),
+      join(repo, 'node_modules'),
+      platform() === 'win32' ? 'junction' : 'dir'
+    )
+
+    // The learner's starting point must fail, because Lab 3 exists to repair
+    // it, and Lab 3 Task 7 promises the pipeline recovers afterwards. Both
+    // halves are executed here rather than asserted from the lab text.
+    expect(runProjectTests(repo).status).not.toBe(0)
+
+    writeFileSync(
+      join(repo, BISECT_TARGET),
+      readFileSync(
+        join(
+          root,
+          'solutions',
+          '3-git-bisect',
+          'keyboard_input_manager.test.ts'
+        ),
+        'utf8'
+      )
+    )
+
+    const after = runProjectTests(repo)
+    expect(`${after.stdout}\n${after.stderr}`).not.toContain(BISECT_MARKER)
+    expect(after.status).toBe(0)
+  }, 900_000)
 })
 
 describe('golden fixture: reference contract', () => {

@@ -40,7 +40,7 @@ Commit IDs in the examples below are illustrative; your commit IDs will differ.
    | * 0f3cb0b Animate score update
    |/
    * 35710de Add watch script
-   * 6181c9c Update ESLint config
+   * 6181c9c Remove maintenance tooling tests
    ```
 
    > Because `--all` shows every branch, the four `feature/start-tiles-*` and

@@ -15,6 +15,11 @@ seed organization-owned private repositories through the GitHub REST API.
 **It does not:** create organizations or teams, invite members, delete or tear
 down anything, or install dependencies on anybody's machine.
 
+**The classroom tree is trimmed.** The first seeded commit removes this tool's
+own test files, because they read the repository they run in and would fail a
+learner's continuous integration permanently once Lab 1 creates a branch. The
+tooling itself ships, so a customer can provision from the bundle they receive.
+
 **A Git bundle carries Git history. That is all it carries.** It does not carry
 `node_modules`, and it does not carry pull requests, issues, releases, rulesets
 or Pages configuration — those are GitHub-side resources that exist only in a
@@ -57,9 +62,15 @@ $env:NODIST_NODE_VERSION='24.15.0'; node -v    # v24.15.0
 The implementation was written and verified on **Node 24.15.0 with npm 10.2.3**.
 
 The provisioning CLI runs TypeScript directly through Node's built-in type
-stripping, so there is no build step. A small resolution hook
-(`tools/provisioning/loader.mjs`) maps the repository's `./module.js` import
-specifiers onto their TypeScript sources; it adds no dependency.
+stripping, so there is no build step. **That requires a newer Node than
+`.node-version` pins:** unflagged type stripping is not available on 22.9.0, so
+`npm run provision` needs Node 22.18 or newer, and was verified on 24.15.0. The
+project's own `npm test`, `npm run lint` and `npm run build` are unaffected and
+still work on the pinned version.
+
+A small resolution hook (`tools/provisioning/loader.mjs`) maps the repository's
+`./module.js` import specifiers onto their TypeScript sources; it adds no
+dependency.
 
 ### Dependencies
 
@@ -264,7 +275,8 @@ Confirm each with the customer. None may be assumed.
 
 Everything in sections 3 and 5 is exercised by the test suite using real
 temporary Git repositories and a local fake GitHub service. No test contacts a
-network.
+network. The suite also builds a fixture, runs the classroom project's own Jest
+suite inside it, and requires it to fail before Lab 3 and pass afterwards.
 
 **No part of this tool has been run against GitHub.** The request shapes were
 checked against the GitHub REST reference on 2026-09-09, and the decision logic
