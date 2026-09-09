@@ -106,8 +106,11 @@ predate this configuration and do not satisfy it. Those commits are preserved
 verbatim for provenance and are not rewritten. Lab 3 asks the learner to grep at
 each bisect step, not to run the pipeline, so this does not affect the exercise.
 
-It also does **not** yet hold after `render` substitutes the class placeholders
-— see section 10.
+It also holds **after `render` substitutes the class placeholders**. A test
+renders a freshly built classroom tree with a class name long enough to push a
+rewritten Markdown line past `printWidth`, then runs the pipeline:
+`Check Format` and `Lint` pass and the run reaches `Test`, which fails on the
+seeded defect described above.
 
 ## 3. Lab-by-lab contract
 
@@ -252,9 +255,14 @@ Two independent problems made the old instruction unusable:
 2. **`git bisect` assumes a single transition, and this history has two.** The
    imported history introduced the same `expect(true).toBe(false)` assertion at
    one commit and removed it thirty commits later. Marking the root commit good
-   makes `git bisect` converge on that older, unrelated commit — silently, with
-   exit code 0. A test demonstrates this: anchoring at the root blames a
-   different commit than the one the builder seeded.
+   spans both transitions, so `git bisect` is not required to converge on the
+   commit the builder seeded — which of the two it reports depends on the path
+   its binary search takes through the history, and it exits 0 either way. Both
+   candidates carry the subject `Disable broken test`, so the log gives the
+   learner nothing to notice. A test asserts the structural cause rather than a
+   particular outcome: the marker is present at a commit below `lab-baseline`
+   and absent at the tag itself, so anchoring on the tag leaves exactly one
+   transition.
 
 The builder does not hardcode the anchor. It searches the imported history for
 changes to the marker, takes the most recent one at which the marker is absent,
@@ -324,9 +332,34 @@ flow must use the same mapping.
 The generic material carries `<organization>` and `<class-team>`. They are
 substituted on a per-class copy immediately before seeding, so no customer name
 is ever committed to this repository. The provisioner refuses to run against a
-source that still contains them.
+source whose class configuration is still unrendered.
 
-Today the only file carrying placeholders is `labs/6-protect-main.md`.
+`render` rewrites an **explicit allow-list**, `CLASS_CONFIG_FILES` in
+`tools/provisioning/contract.ts`, and nothing else:
+
+| File                     | Why it is class configuration                                                                                                                                          |
+| ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `labs/6-protect-main.md` | Task 1 has the learner type `* @<organization>/<class-team>` into `CODEOWNERS`; Task 3 prints the rejected-push output naming `github.com/<organization>/<repository>` |
+
+The list is enumerated rather than discovered by scanning for the tokens,
+because a content scan cannot tell a file that **carries** class configuration
+from one that **describes or implements** the mechanism — both contain the
+token. Three files are in the second category and keep their tokens verbatim
+through a render:
+
+| File                             | Why its tokens must survive                                                                       |
+| -------------------------------- | ------------------------------------------------------------------------------------------------- |
+| `tools/provisioning/contract.ts` | Defines `PLACEHOLDERS`; rewriting it leaves the delivered tooling unable to render the next class |
+| `docs/lab-contract.md`           | This document                                                                                     |
+| `docs/provisioning.md`           | The provisioning route                                                                            |
+
+`render` reports both sets: what it substituted, and what it left carrying
+tokens by design. `findPlaceholders` remains a content scan and is the
+diagnostic behind that report; `unrenderedClassConfig` answers the narrower
+question a provisioning run asks.
+
+`CODEOWNERS` is deliberately not on the allow-list. Lab 6 Task 1 is the exercise
+that creates it, so a classroom tree ships without one.
 
 ### Outputs
 
@@ -352,36 +385,3 @@ The state described here is produced and verified locally. Nothing in it has
 been exercised against GitHub. Whether a given organization can publish a
 private Pages site, apply rulesets, or use hosted runners are properties of that
 tenant, and they are per-engagement inputs to confirm — never facts to assume.
-
-## 10. Known defect: `render` substitutes too much
-
-`renderPlaceholders` replaces the placeholder tokens in **every** file that
-contains them. Two of those files describe the placeholder mechanism and one
-implements it, so rendering damages them:
-
-| File                             | Effect of rendering                         |
-| -------------------------------- | ------------------------------------------- |
-| `labs/6-protect-main.md`         | Correct — the learner types this value      |
-| `docs/lab-contract.md`           | Sentence about placeholders loses its point |
-| `docs/provisioning.md`           | Same, in two places                         |
-| `tools/provisioning/contract.ts` | `PLACEHOLDERS` stops holding placeholders   |
-
-Two consequences, both confirmed by running `render` against a built fixture
-with a realistic organization name:
-
-1. **The rendered tree fails `Check Format`.** A class name longer than the
-   token it replaces pushes those Markdown lines past `printWidth`, Prettier
-   rewraps them, and the `Apply class configuration` commit fails the format
-   check — the same failure mode section 2 describes, one step downstream.
-2. **The provisioning tool in the delivered bundle is corrupted.** With
-   `PLACEHOLDERS` overwritten by one class's values, a customer re-running
-   `render` from their bundle cannot substitute anything.
-
-Neither is repaired here, because deciding which files carry class configuration
-is a curriculum decision rather than a formatting one. The likely fix is to
-render only the files a learner reads as configuration, and to leave the tooling
-and the documentation that describes it alone.
-
-**Until that is decided, treat `render` as unsafe** and provision from the
-unrendered tree, whose pipeline behaviour is the one section 2 describes and the
-test suite verifies.

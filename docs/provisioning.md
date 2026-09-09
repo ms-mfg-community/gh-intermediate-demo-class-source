@@ -129,13 +129,12 @@ Run this on a **per-class copy**, never on the generic repository. It rewrites
 `<organization>` and `<class-team>` and records the result as one commit. It
 refuses a value that is blank or still looks like a placeholder.
 
-> **Known defect — `render` substitutes too much.** It rewrites every file
-> containing a placeholder, including this document, the lab contract, and
-> `tools/provisioning/contract.ts`, where the placeholder constants live. The
-> rendered tree fails `Check Format`, and the provisioning tool in the resulting
-> bundle can no longer substitute anything. See section 10 of the
-> [lab contract](./lab-contract.md). Until it is repaired, provision from the
-> unrendered tree.
+It rewrites only the files listed in `CLASS_CONFIG_FILES`
+(`tools/provisioning/contract.ts`) — today just `labs/6-protect-main.md`. The
+files that describe or implement the placeholder mechanism, this document, the
+[lab contract](./lab-contract.md) and `tools/provisioning/contract.ts` itself,
+keep their tokens verbatim, so the tooling in the delivered bundle can still
+render the next class. The command reports both sets.
 
 ### Export the delivery bundle (local, no network)
 
@@ -288,8 +287,10 @@ network. The suite also builds a fixture and runs the classroom project's own
 continuous integration checks inside it, in the order
 `.github/workflows/continuous-integration.yml` runs them: `Check Format` and
 `Lint` must pass and `Test` must fail at the learner's starting point, and all
-three must pass once the Lab 3 solution is applied. The checks are asserted by
-exit status, so the result does not depend on log wording.
+three must pass once the Lab 3 solution is applied. It repeats the
+`Check Format` half against a tree rendered with a long class name, and checks
+that a rendered tree's own tooling can still render the next class. The checks
+are asserted by exit status, so the result does not depend on log wording.
 
 **No part of this tool has been run against GitHub.** The request shapes were
 checked against the GitHub REST reference on 2026-09-09, and the decision logic

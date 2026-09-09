@@ -1,9 +1,11 @@
 /** @jest-environment node */
+import { spawnSync } from 'node:child_process'
 import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
+  CLASS_CONFIG_FILES,
   PLACEHOLDERS,
   SEEDED_PULL_REQUESTS,
   intendedExportedRefs
@@ -11,9 +13,10 @@ import {
 import { exportBundle, bundleRefs } from '../tools/provisioning/bundle.js'
 import {
   buildGoldenRepository,
-  findPlaceholders,
   renderPlaceholders,
-  type GoldenFixture
+  unrenderedClassConfig,
+  type GoldenFixture,
+  type RenderReport
 } from '../tools/provisioning/fixture.js'
 import { git, lsRemote, readBlob } from '../tools/provisioning/git.js'
 import {
@@ -40,6 +43,7 @@ const OPERATOR = 'course-provisioner'
 let workspace: string
 let fixture: GoldenFixture
 let classRepo: string
+let renderReport: RenderReport
 
 beforeAll(() => {
   workspace = mkdtempSync(join(tmpdir(), 'course-provisioning-'))
@@ -67,7 +71,10 @@ beforeAll(() => {
     git(classRepo, ['branch', '--force', branch, `origin/${branch}`])
   }
 
-  renderPlaceholders(classRepo, { organization: ORG, classTeam: TEAM })
+  renderReport = renderPlaceholders(classRepo, {
+    organization: ORG,
+    classTeam: TEAM
+  })
 }, 900_000)
 
 afterAll(() => {
@@ -164,15 +171,94 @@ function pick(
 
 describe('class placeholders', () => {
   it('keeps the generic repository free of customer values', () => {
-    expect(findPlaceholders(fixture.path, 'HEAD').length).toBeGreaterThan(0)
+    expect(unrenderedClassConfig(fixture.path, 'HEAD')).toEqual([
+      ...CLASS_CONFIG_FILES
+    ])
   })
 
-  it('substitutes them on the class copy', () => {
-    expect(findPlaceholders(classRepo, 'HEAD')).toEqual([])
-    expect(readBlob(classRepo, 'HEAD', 'labs/6-protect-main.md')).toContain(
-      `@${ORG}/${TEAM}`
+  it('substitutes the class configuration on the class copy', () => {
+    expect(unrenderedClassConfig(classRepo, 'HEAD')).toEqual([])
+    expect(renderReport.rendered).toEqual([...CLASS_CONFIG_FILES])
+
+    const lab6 = readBlob(classRepo, 'HEAD', 'labs/6-protect-main.md')
+
+    // Lab 6 Task 1: the CODEOWNERS line the learner types.
+    expect(lab6).toContain(`* @${ORG}/${TEAM}`)
+    // Lab 6 Task 3: the rejected-push output the learner is shown.
+    expect(lab6).toContain(`To github.com:${ORG}/<repository>.git`)
+    expect(lab6).not.toContain(PLACEHOLDERS.organization)
+    expect(lab6).not.toContain(PLACEHOLDERS.classTeam)
+  })
+
+  it.each([
+    ['tools/provisioning/contract.ts'],
+    ['docs/lab-contract.md'],
+    ['docs/provisioning.md']
+  ])('leaves the tokens in %s verbatim', (path) => {
+    // Rendering these would rewrite the mechanism with one class's values.
+    // They are reported, never written.
+    expect(renderReport.rendered).not.toContain(path)
+    expect(renderReport.retained).toContain(path)
+
+    expect(readBlob(classRepo, 'HEAD', path)).toEqual(
+      readBlob(fixture.path, 'HEAD', path)
     )
   })
+
+  it('renders nothing outside the allow-list', () => {
+    // Exhaustive on purpose. A new file carrying a token has to be classified
+    // — class configuration, or mechanism — and this is where that decision
+    // is forced rather than made silently by a content scan.
+    expect(renderReport.rendered).toEqual([...CLASS_CONFIG_FILES])
+    expect(renderReport.retained).toEqual([
+      'docs/lab-contract.md',
+      'docs/provisioning.md',
+      'tools/provisioning/contract.ts'
+    ])
+  })
+
+  it('leaves the class copy able to render the next class', () => {
+    // The check that proves the tool did not destroy itself: a second class
+    // is rendered by the first class's own delivered tooling.
+    const nextOrg = 'fabrikam-global-engineering'
+    const nextTeam = 'gh-intermediate-may-cohort'
+    const nextClass = join(workspace, 'next-class')
+
+    git(workspace, [
+      'clone',
+      '--quiet',
+      '--no-hardlinks',
+      fixture.path,
+      nextClass
+    ])
+    git(nextClass, ['config', 'core.autocrlf', 'false'])
+
+    const result = spawnSync(
+      process.execPath,
+      [
+        '--import',
+        './tools/provisioning/register.mjs',
+        'tools/provisioning/cli.ts',
+        'render',
+        '--repo',
+        nextClass,
+        '--organization',
+        nextOrg,
+        '--class-team',
+        nextTeam
+      ],
+      { cwd: classRepo, encoding: 'utf8' }
+    )
+
+    expect(result.status).toBe(0)
+    expect(readBlob(nextClass, 'HEAD', 'labs/6-protect-main.md')).toContain(
+      `* @${nextOrg}/${nextTeam}`
+    )
+    // The chain continues: the second class can render a third.
+    expect(
+      readBlob(nextClass, 'HEAD', 'tools/provisioning/contract.ts')
+    ).toContain(PLACEHOLDERS.organization)
+  }, 120_000)
 
   it.each([['organization'], ['classTeam']])(
     'refuses a %s that is still a placeholder',
@@ -186,6 +272,15 @@ describe('class placeholders', () => {
       ).toThrow(/not a concrete value/)
     }
   )
+
+  it.each([['organization'], ['classTeam']])('refuses a blank %s', (key) => {
+    expect(() =>
+      renderPlaceholders(classRepo, {
+        organization: key === 'organization' ? '   ' : ORG,
+        classTeam: key === 'classTeam' ? '   ' : TEAM
+      })
+    ).toThrow(/not a concrete value/)
+  })
 })
 
 describe('delivery bundle', () => {

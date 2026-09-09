@@ -15,6 +15,7 @@ import {
   BISECT_ANCHOR_TAG,
   BISECT_MARKER,
   BISECT_TARGET,
+  CLASS_CONFIG_FILES,
   CONFLICT_BRANCHES,
   DEFAULT_BRANCH,
   FORBIDDEN_REF_PREFIXES,
@@ -23,6 +24,7 @@ import {
   LAB_8_END_STATE,
   LEARNER_CREATED_REFS,
   MAINTENANCE_ONLY_PATHS,
+  PLACEHOLDERS,
   REBASE_BRANCH,
   REBASE_COMMITS,
   detectLearnerRefCollisions,
@@ -30,6 +32,7 @@ import {
 } from '../tools/provisioning/contract.js'
 import {
   buildGoldenRepository,
+  renderPlaceholders,
   replaceOnce,
   resolveConflict,
   runBisect,
@@ -285,18 +288,34 @@ describe('golden fixture: Lab 3 bisect', () => {
     expect(fixture.bisect.rootAnchorSafe).toBe(false)
   })
 
-  it('demonstrates that anchoring at the root blames the wrong commit', () => {
-    const repo = scratch('bisect-root')
-    const rootCommit = git(repo, [
-      'rev-list',
-      '--max-parents=0',
-      fixture.headCommit
-    ])
-
-    expect(runBisect(repo, rootCommit, fixture.headCommit)).not.toBe(
-      fixture.bisect.badCommit
+  it('leaves a second good-to-bad boundary below the anchor', () => {
+    const carrying = fixture.bisect.priorOccurrences.filter((commit) =>
+      readBlob(fixture.path, commit, BISECT_TARGET)?.includes(BISECT_MARKER)
     )
-  }, 900_000)
+
+    // The imported history introduced this assertion once and removed it
+    // later, so a bisect started at the repository root spans two good-to-bad
+    // transitions. `git bisect` assumes one, and which of the two it converges
+    // on depends on the path its binary search takes — so what it blames from
+    // the root is asserted here as structure, never as a particular commit.
+    expect(carrying.length).toBeGreaterThan(0)
+
+    // Anchoring on the tag excludes every one of them, and the anchor itself
+    // is clean, so the learner's bisect spans exactly one transition.
+    expect(
+      readBlob(fixture.path, fixture.bisect.anchorCommit, BISECT_TARGET)
+    ).not.toContain(BISECT_MARKER)
+
+    for (const commit of carrying)
+      expect(
+        tryGit(fixture.path, [
+          'merge-base',
+          '--is-ancestor',
+          commit,
+          fixture.bisect.anchorCommit
+        ]).status
+      ).toBe(0)
+  })
 
   it('publishes the anchor as a tag learners can name', () => {
     expect(
@@ -541,6 +560,54 @@ describe('golden fixture: the classroom project builds and tests', () => {
       ['test', 0]
     ])
   }, 900_000)
+})
+
+describe('golden fixture: rendering a class copy', () => {
+  // Long enough that substituting it into Markdown prose pushes the line past
+  // the configured printWidth. Under the old content-scanning render that
+  // rewrote `docs/`, Prettier reflowed those lines and the classroom tree
+  // failed `Check Format` on its very first pipeline run.
+  const ORGANIZATION = 'contoso-financial-services-group'
+  const CLASS_TEAM = 'github-intermediate-march-cohort'
+
+  it('passes Check Format after a long class name is rendered', () => {
+    const repo = installedScratch('rendered')
+    const report = renderPlaceholders(repo, {
+      organization: ORGANIZATION,
+      classTeam: CLASS_TEAM
+    })
+
+    expect(report.rendered).toEqual([...CLASS_CONFIG_FILES])
+
+    const checks = runCiChecks(repo)
+
+    // The tree is red at `Test` by design until Lab 3 is done. What rendering
+    // must not do is move the failure earlier, which is what section 2 of the
+    // lab contract promises and what the old behaviour broke.
+    expect(checks.map((step) => step.id)).toEqual([
+      'format-check',
+      'lint',
+      'test'
+    ])
+    expect(checks.find((step) => step.id === 'format-check')?.status).toBe(0)
+    expect(checks.find((step) => step.id === 'lint')?.status).toBe(0)
+  }, 900_000)
+
+  it('substitutes the lab prose a learner reads as configuration', () => {
+    const repo = scratch('rendered-prose')
+
+    renderPlaceholders(repo, {
+      organization: ORGANIZATION,
+      classTeam: CLASS_TEAM
+    })
+
+    const lab6 = readBlob(repo, 'HEAD', 'labs/6-protect-main.md')
+
+    expect(lab6).toContain(`* @${ORGANIZATION}/${CLASS_TEAM}`)
+    expect(lab6).toContain(`To github.com:${ORGANIZATION}/<repository>.git`)
+    expect(lab6).not.toContain(PLACEHOLDERS.organization)
+    expect(lab6).not.toContain(PLACEHOLDERS.classTeam)
+  }, 120_000)
 })
 
 describe('golden fixture: reference contract', () => {
