@@ -27,21 +27,26 @@ introduced, but you know it wasn't there when you first created the game.
 
 1. Locate a commit where the code change is not present
 
+   Your repository was set up with a `lab-baseline` tag marking the last release
+   known to pass its tests, so that is a commit you know is good.
+
    ```bash
-   git log --oneline
+   git show --no-patch --oneline lab-baseline
    ```
 
-   From the output of the above command, find a commit where the code change is
-   not present and copy the commit hash. You can simply select the earliest
-   commit in the logs (the one labeled `Initial commit`).
+   > **Why not simply pick the oldest commit?** `git bisect` assumes the change
+   > you are hunting for appears exactly once. This project's history is long
+   > and the same assertion was disabled and re-enabled during its development,
+   > so starting from the very first commit can lead `git bisect` to an older,
+   > unrelated commit — and it will do so without warning. Marking a known-good
+   > release as the starting point is both the safer habit and the one you would
+   > use on a real project.
 
 1. Indicate a commit where you know the code does not contain the change you're
    looking for
 
-   Replace `<sha>` with the commit hash you found in the previous step.
-
    ```bash
-   git bisect good <sha>
+   git bisect good lab-baseline
    ```
 
 ## Task 2: Locate the Commit

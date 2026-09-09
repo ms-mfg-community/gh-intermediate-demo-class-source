@@ -30,15 +30,22 @@ Commit IDs in the examples below are illustrative; your commit IDs will differ.
    was created from an earlier commit on `main`.
 
    ```plain
-   ...
-   * a4f1c35 Update scoreboard size
-   * f723e2f Remove comment
-   * d2b828f Revert change
-   | * 0f3cb0b (HEAD -> feature/animate-score) Animate score update
+   * 9b41d7c (main, origin/main) Note the class baseline in the README
+   * 4c8e2a1 Tidy the game rules markup
+   * 6d17f95 Disable broken test
+   * 82ac3e0 Document the game controls
+   | * d2b828f (HEAD -> feature/animate-score) Revert change
+   | * f723e2f Remove comment
+   | * a4f1c35 Update scoreboard size
+   | * 0f3cb0b Animate score update
    |/
-   * 35710de (origin/main) Add watch script
+   * 35710de Add watch script
    * 6181c9c Update ESLint config
    ```
+
+   > Because `--all` shows every branch, the four `feature/start-tiles-*` and
+   > `feature/tile-value-*` branches used in Lab 8 also appear. They are not
+   > part of this lab; ignore them for now.
 
 ## Task 2: Rebase the Feature Branch
 
@@ -96,8 +103,11 @@ Commit IDs in the examples below are illustrative; your commit IDs will differ.
 
    ```plain
    * 0f3cb0b (HEAD -> feature/animate-score) Animate score update
-   * 35710de (origin/main) Add watch script
-   * 6181c9c Update ESLint config
+   * 9b41d7c (main, origin/main) Note the class baseline in the README
+   * 4c8e2a1 Tidy the game rules markup
+   * 6d17f95 Disable broken test
+   * 82ac3e0 Document the game controls
+   * 35710de Add watch script
    ```
 
    > In the example above, the topmost commit message should be set to whatever
