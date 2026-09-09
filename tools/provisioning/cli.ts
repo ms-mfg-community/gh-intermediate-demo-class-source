@@ -183,15 +183,21 @@ export async function main(argv: string[]): Promise<number> {
   }
 
   if (command === 'render') {
-    const changed = renderPlaceholders(resolve(required(options, 'repo')), {
+    const report = renderPlaceholders(resolve(required(options, 'repo')), {
       organization: required(options, 'organization'),
       classTeam: required(options, 'class-team')
     })
-    process.stdout.write(
-      changed.length === 0
-        ? 'No placeholders remained; nothing to render.\n'
-        : `Rendered ${changed.length} file(s): ${changed.join(', ')}\n`
-    )
+    const substituted =
+      report.rendered.length === 0
+        ? 'No class configuration needed substituting.\n'
+        : `Rendered ${report.rendered.length} file(s): ${report.rendered.join(', ')}\n`
+    const kept =
+      report.retained.length === 0
+        ? ''
+        : 'Left carrying placeholders on purpose, because they define the ' +
+          `mechanism rather than configure a class: ${report.retained.join(', ')}\n`
+
+    process.stdout.write(substituted + kept)
     return 0
   }
 

@@ -35,6 +35,35 @@ export const PLACEHOLDERS = {
 } as const
 
 /**
+ * Files that carry per-class configuration, and are the only files `render`
+ * rewrites.
+ *
+ * Stated as an explicit allow-list rather than derived by scanning for the
+ * tokens, because a content scan cannot distinguish a file that *carries*
+ * class configuration from a file that *describes or implements* the
+ * placeholder mechanism — both contain the token. A scan therefore rewrites
+ * `PLACEHOLDERS` above, and the delivered tooling loses the ability to render
+ * anything. Which files a class configures is a curriculum fact, so it is
+ * recorded here alongside the rest of the curriculum's facts.
+ *
+ * Derived from the labs. `labs/6-protect-main.md` is the only lab that prints
+ * a token: Task 1 has the learner type `* @<organization>/<class-team>` into a
+ * `CODEOWNERS` file, and Task 3 prints the rejected-push output naming
+ * `github.com/<organization>/<repository>`. Both are values a learner reads as
+ * their own organization and team. Every other occurrence in the repository is
+ * in `tools/provisioning/contract.ts`, `docs/lab-contract.md` or
+ * `docs/provisioning.md`, which describe the mechanism and must keep their
+ * tokens verbatim.
+ *
+ * `CODEOWNERS` is deliberately absent: Lab 6 Task 1 is the exercise that
+ * creates it, so no classroom tree ships one to render.
+ *
+ * An entry missing from a given tree is skipped rather than treated as an
+ * error, so this list can name a file a future lab adds.
+ */
+export const CLASS_CONFIG_FILES = ['labs/6-protect-main.md'] as const
+
+/**
  * A branch the instructor seeds before the class starts.
  */
 export interface SeededBranch {

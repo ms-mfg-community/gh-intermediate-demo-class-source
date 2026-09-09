@@ -14,6 +14,7 @@ import {
   BISECT_BAD_SUBJECT,
   BISECT_MARKER,
   BISECT_TARGET,
+  CLASS_CONFIG_FILES,
   CONFLICT_BRANCHES,
   DEFAULT_BRANCH,
   GAME_MANAGER,
@@ -659,7 +660,13 @@ export function buildGoldenRepository(
 }
 
 /**
- * Finds files still carrying an unsubstituted class placeholder.
+ * Finds files carrying a class placeholder token.
+ *
+ * A content scan, and therefore a diagnostic rather than a source of truth
+ * about what to rewrite: it cannot tell a file that carries class
+ * configuration from one that documents the placeholder mechanism.
+ * `CLASS_CONFIG_FILES` decides what `renderPlaceholders` writes; this reports
+ * what is actually there, so the two can be compared.
  *
  * @param repo Repository directory.
  * @param revision Reference to inspect.
@@ -686,52 +693,95 @@ export function findPlaceholders(repo: string, revision: string): string[] {
 }
 
 /**
+ * Finds class-configuration files that have not been rendered yet.
+ *
+ * This is the question a provisioning run needs answered — "does this tree
+ * still hold unsubstituted class configuration?" — as opposed to the broader
+ * question `findPlaceholders` answers. Tokens left in the tooling and its
+ * documentation are the intended state and never appear here.
+ *
+ * @param repo Repository directory.
+ * @param revision Reference to inspect.
+ * @returns Repository-relative paths, sorted.
+ */
+export function unrenderedClassConfig(
+  repo: string,
+  revision: string
+): string[] {
+  const carrying = new Set(findPlaceholders(repo, revision))
+
+  return CLASS_CONFIG_FILES.filter((path) => carrying.has(path)).sort()
+}
+
+/** What a render substituted, and what it deliberately left alone. */
+export interface RenderReport {
+  /** Allow-listed files rewritten with the class values, sorted. */
+  rendered: string[]
+  /**
+   * Files still carrying a token afterwards, sorted.
+   *
+   * Not a failure. After a successful render these are exactly the files that
+   * describe or implement the placeholder mechanism, and keeping their tokens
+   * intact is what lets a customer render the next class from the delivered
+   * bundle.
+   */
+  retained: string[]
+}
+
+/**
  * Substitutes the class placeholders and records the result as one commit.
  *
  * The generic material keeps the placeholders, so no customer name is ever
  * committed to the reusable repository. Substitution happens on a per-class
  * copy, immediately before that class's repositories are seeded.
  *
+ * Only `CLASS_CONFIG_FILES` are rewritten. Deriving the write set from a
+ * content scan instead would rewrite the tooling that owns the tokens and the
+ * documentation that explains them.
+ *
  * @param repo Repository directory to render in place.
  * @param values Organization and class team to substitute.
  * @param timestamp Commit timestamp, in seconds since the Unix epoch.
- * @returns Paths that were rewritten, sorted.
+ * @returns What was rewritten and what was left carrying tokens by design.
  * @throws If either value is blank or still looks like a placeholder.
  */
 export function renderPlaceholders(
   repo: string,
   values: { organization: string; classTeam: string },
   timestamp: number = FIXTURE_EPOCH
-): string[] {
+): RenderReport {
   for (const [key, value] of Object.entries(values))
     if (value.trim() === '' || value.includes('<') || value.includes('>'))
       throw new Error(`Refusing to render: ${key} is not a concrete value`)
 
-  const paths = findPlaceholders(repo, 'HEAD')
-  if (paths.length === 0) return []
-
   const files: Record<string, string> = {}
 
-  for (const path of paths) {
+  for (const path of CLASS_CONFIG_FILES) {
     const current = readBlob(repo, 'HEAD', path)
     if (current === undefined) continue
 
-    files[path] = current
+    const substituted = current
       .split(PLACEHOLDERS.organization)
       .join(values.organization)
       .split(PLACEHOLDERS.classTeam)
       .join(values.classTeam)
+
+    if (substituted !== current) files[path] = substituted
   }
 
-  for (const [path, content] of Object.entries(files))
-    writeFileSync(join(repo, path), content)
+  const rendered = Object.keys(files).sort()
 
-  git(repo, ['add', '--', ...Object.keys(files)], { timestamp })
-  git(repo, ['commit', '--quiet', '-m', 'Apply class configuration'], {
-    timestamp
-  })
+  if (rendered.length > 0) {
+    for (const [path, content] of Object.entries(files))
+      writeFileSync(join(repo, path), content)
 
-  return Object.keys(files).sort()
+    git(repo, ['add', '--', ...rendered], { timestamp })
+    git(repo, ['commit', '--quiet', '-m', 'Apply class configuration'], {
+      timestamp
+    })
+  }
+
+  return { rendered, retained: findPlaceholders(repo, 'HEAD') }
 }
 
 /**

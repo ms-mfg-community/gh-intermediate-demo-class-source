@@ -17,7 +17,7 @@ import {
   SEEDED_PULL_REQUESTS,
   intendedExportedRefs
 } from '../contract.js'
-import { findPlaceholders } from '../fixture.js'
+import { unrenderedClassConfig } from '../fixture.js'
 import { lsRemote, pushRefs } from '../git.js'
 import { GitHubApi, GitHubError } from './client.js'
 
@@ -341,14 +341,14 @@ export class Provisioner {
       ...team
     })
 
-    const unrendered = findPlaceholders(config.sourceRepository, 'HEAD')
+    const unrendered = unrenderedClassConfig(config.sourceRepository, 'HEAD')
     actions.push({
       kind: 'prerequisite',
       target: 'class-placeholders',
       status: unrendered.length === 0 ? 'satisfied' : 'blocked',
       detail:
         unrendered.length === 0
-          ? 'Source repository carries no unsubstituted placeholders'
+          ? 'Source repository carries no unrendered class configuration'
           : `Source repository still contains class placeholders in ${unrendered.join(', ')}; render them before provisioning`
     })
 
