@@ -7,12 +7,16 @@
 ![Linter](https://github.com/githubschool/gh-github-intermediate-template/actions/workflows/linter.yml/badge.svg)
 
 This is your project repository for the GitHub Intermediate training offering.
-Within this repository, you will find a number of issues that you will be
-working on throughout the training. The final completed project will be a
-web-based game deployed to GitHub Pages.
+Within this repository, you will find a game that you will extend, repair and
+release across a series of labs. The final completed project will be a web-based
+game deployed to GitHub Pages.
 
 Once deployed, you will be able to access your game at the link in the **About**
 column of the repository's home page.
+
+> **The tests fail when you start, and that is expected.** One of the commits in
+> this repository's history disabled a working test. Lab 3 has you find it and
+> repair it.
 
 ## Prerequisites
 
@@ -33,6 +37,16 @@ column of the repository's home page.
 - [Lab 9: Run a GitHub Actions Workflow](./labs/9-run-a-workflow.md)
 - [Lab 10: Create a Release](./labs/10-create-a-release.md)
 - [Lab 11: Deploy to an Environment](./labs/11-deploy-to-an-environment.md)
+
+## For Instructors
+
+Classroom repositories are provisioned, not generated from a template. See:
+
+- [Provisioning](./docs/provisioning.md) — how to build the golden repository,
+  export the delivery bundle, and seed per-student repositories. Read the
+  Node.js section before your first run.
+- [Lab Contract](./docs/lab-contract.md) — the exact repository state each lab
+  assumes, what the learner creates, and the expected instructional failures.
 
 ## Reference
 
