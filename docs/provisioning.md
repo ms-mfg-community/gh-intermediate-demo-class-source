@@ -129,6 +129,14 @@ Run this on a **per-class copy**, never on the generic repository. It rewrites
 `<organization>` and `<class-team>` and records the result as one commit. It
 refuses a value that is blank or still looks like a placeholder.
 
+> **Known defect — `render` substitutes too much.** It rewrites every file
+> containing a placeholder, including this document, the lab contract, and
+> `tools/provisioning/contract.ts`, where the placeholder constants live. The
+> rendered tree fails `Check Format`, and the provisioning tool in the resulting
+> bundle can no longer substitute anything. See section 10 of the
+> [lab contract](./lab-contract.md). Until it is repaired, provision from the
+> unrendered tree.
+
 ### Export the delivery bundle (local, no network)
 
 ```powershell

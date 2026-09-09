@@ -106,6 +106,9 @@ predate this configuration and do not satisfy it. Those commits are preserved
 verbatim for provenance and are not rewritten. Lab 3 asks the learner to grep at
 each bisect step, not to run the pipeline, so this does not affect the exercise.
 
+It also does **not** yet hold after `render` substitutes the class placeholders
+— see section 10.
+
 ## 3. Lab-by-lab contract
 
 | Lab | Needs before it starts                               | Learner creates             |
@@ -349,3 +352,36 @@ The state described here is produced and verified locally. Nothing in it has
 been exercised against GitHub. Whether a given organization can publish a
 private Pages site, apply rulesets, or use hosted runners are properties of that
 tenant, and they are per-engagement inputs to confirm — never facts to assume.
+
+## 10. Known defect: `render` substitutes too much
+
+`renderPlaceholders` replaces the placeholder tokens in **every** file that
+contains them. Two of those files describe the placeholder mechanism and one
+implements it, so rendering damages them:
+
+| File                             | Effect of rendering                         |
+| -------------------------------- | ------------------------------------------- |
+| `labs/6-protect-main.md`         | Correct — the learner types this value      |
+| `docs/lab-contract.md`           | Sentence about placeholders loses its point |
+| `docs/provisioning.md`           | Same, in two places                         |
+| `tools/provisioning/contract.ts` | `PLACEHOLDERS` stops holding placeholders   |
+
+Two consequences, both confirmed by running `render` against a built fixture
+with a realistic organization name:
+
+1. **The rendered tree fails `Check Format`.** A class name longer than the
+   token it replaces pushes those Markdown lines past `printWidth`, Prettier
+   rewraps them, and the `Apply class configuration` commit fails the format
+   check — the same failure mode section 2 describes, one step downstream.
+2. **The provisioning tool in the delivered bundle is corrupted.** With
+   `PLACEHOLDERS` overwritten by one class's values, a customer re-running
+   `render` from their bundle cannot substitute anything.
+
+Neither is repaired here, because deciding which files carry class configuration
+is a curriculum decision rather than a formatting one. The likely fix is to
+render only the files a learner reads as configuration, and to leave the tooling
+and the documentation that describes it alone.
+
+**Until that is decided, treat `render` as unsafe** and provision from the
+unrendered tree, whose pipeline behaviour is the one section 2 describes and the
+test suite verifies.
