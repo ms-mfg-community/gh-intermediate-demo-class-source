@@ -26,6 +26,7 @@ column of the repository's home page.
 
 ## Activities and Labs
 
+- [Lab 0: Clone the Repository](./labs/0-clone-the-repository.md)
 - [Lab 1: Add a Feature](./labs/1-add-a-feature.md)
 - [Lab 2: Add Tags](./labs/2-add-tags.md)
 - [Lab 3: Git Bisect](./labs/3-git-bisect.md)
