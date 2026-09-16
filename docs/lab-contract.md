@@ -335,9 +335,23 @@ public or visibility-unknown site blocks the check. The boolean flags must be
 actual JSON booleans. See the
 [two-phase route](./provisioning.md#two-phase-pages-contract).
 
-Attendee access is also manual: Write is the normal permission, with a
-repository-specific Admin exception for learners creating a ruleset in Lab 6 or
-an administrator-led demonstration instead. No provisioning run grants access.
+During manual Pages setup, pause **Deploy to GitHub Pages** and **Branch
+Deploy** and stop any active or queued deployment runs. Do not publish until the
+read-only plan with both flags true confirms private visibility. Then re-enable
+both workflows and manually dispatch **Deploy to GitHub Pages** on **main** for
+the initial deployment. Pausing, configuration, dispatch and viewer-access
+checks are customer-admin operations, not actions performed by the provisioner.
+
+Attendee access is also manual. The class team must be **Visible**, with **Write
+granted directly on every class repository**, as required by
+[GitHub's CODEOWNERS documentation](https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners).
+Individual members' access is not a substitute for the team's direct Write
+access. For Lab 6, grant temporary **Admin only on each learner's own
+repository**, then restore Write; an administrator-led demonstration is the
+alternative. Do not grant the entire team Admin. No provisioning run grants
+access or verifies team visibility and direct permissions.
+
+The live CLI uses `https://api.github.com` and has no alternate-host option.
 
 ### Placeholders
 
@@ -352,6 +366,10 @@ source whose class configuration is still unrendered.
 | File                     | Why it is class configuration                                                                                                                                          |
 | ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `labs/6-protect-main.md` | Task 1 has the learner type `* @<organization>/<class-team>` into `CODEOWNERS`; Task 3 prints the rejected-push output naming `github.com/<organization>/<repository>` |
+
+Its generated commit uses `Course Fixture Builder <fixture@example.invalid>` for
+both author and committer. Customer `git user.name` and `git user.email` are not
+required for `render` and are not changed.
 
 The list is enumerated rather than discovered by scanning for the tokens,
 because a content scan cannot tell a file that **carries** class configuration

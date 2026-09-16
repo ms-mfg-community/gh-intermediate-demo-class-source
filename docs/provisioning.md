@@ -25,8 +25,19 @@ access to their own repository, every learner sees a `404` — which is what
 [Lab 0](../labs/0-clone-the-repository.md) Task 2 tells them to report. Do it
 before asking learners to use the repositories. **Write is the normal attendee
 permission. Lab 6 is the Admin exception:** a learner creating a ruleset needs
-Admin on their own repository for that exercise. An administrator-led
-demonstration is the alternative; learners do not need organization-wide Admin.
+temporary Admin on their own repository for that exercise, then returns to
+Write. An administrator-led demonstration is the alternative; do not grant Admin
+to the whole class team or organization-wide Admin to learners.
+
+**The class team must be Visible and have Write granted directly on every class
+repository.** GitHub's
+[CODEOWNERS requirements](https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners)
+require the team itself to have explicit Write access, even when its individual
+members already have access. Granting only individual attendee access does not
+satisfy this requirement. Team members consequently have Write access across the
+class repositories for reviews; each learner still does their lab work in their
+assigned repository. The CLI checks that the team exists, not its visibility or
+direct repository permissions; an administrator must check those.
 
 **The classroom tree is trimmed.** The first seeded commit removes this tool's
 own test files, because they read the repository they run in and would fail a
@@ -184,6 +195,12 @@ Run this on a **per-class copy**, never on the generic repository. It rewrites
 `<organization>` and `<class-team>` and records the result as one commit. It
 refuses a value that is blank or still looks like a placeholder.
 
+`render` supplies its own author and committer identity:
+`Course Fixture Builder <fixture@example.invalid>`. It does not require customer
+`git user.name` or `git user.email` for this generated commit, and it does not
+change those settings. This is separate from learners configuring their own
+identity for commits they author during the labs.
+
 It rewrites only the files listed in `CLASS_CONFIG_FILES`
 (`tools/provisioning/contract.ts`) — today just `labs/6-protect-main.md`. The
 files that describe or implement the placeholder mechanism, this document, the
@@ -287,7 +304,13 @@ leaves the Pages check off and eligibility unasserted.
    npm run provision -- apply --config C:\work\class.json --confirm
    ```
 
-2. **Have the customer's administrator configure private Pages manually.**
+2. **Pause deployment workflows, then configure private Pages manually.** On
+   each class repository, the customer's administrator must pause **Deploy to
+   GitHub Pages** (`.github/workflows/pages.yml`) and **Branch Deploy**
+   (`.github/workflows/branch-deploy.yml`) and stop any active or queued
+   deployment runs. Keep both workflows paused through the verification in step
+   3: **no publication before private visibility is confirmed**.
+
    Establish that the organization is eligible, then configure each site's
    publishing source as **GitHub Actions** and its visibility as **Private**.
    Follow GitHub's
@@ -311,6 +334,13 @@ leaves the Pages check off and eligibility unasserted.
    `apply` also checks Pages before pushing references or seeding other
    resources in an existing repository, and missing eligibility blocks the
    entire run before any writes.
+
+4. **Resume deployment only after the private-site check passes.** Re-enable
+   **Deploy to GitHub Pages** and **Branch Deploy**. In Actions, manually run
+   **Deploy to GitHub Pages** on **main** for the initial deployment; that
+   workflow supports `workflow_dispatch`. Confirm the deployment completes
+   before checking the published URL. Merely re-enabling a workflow is not a
+   deployment check.
 
 A successful API check establishes the reported configuration at that moment,
 not a working deployment or attendee access. Verify the published URL with an
@@ -349,7 +379,13 @@ calling the classroom ready.
 
 ## 6. Platform constraints
 
-These are properties of GitHub and of a tenant, not of this tool.
+**The live CLI targets github.com only**, using `https://api.github.com`. There
+is no CLI or configuration option for another API host. The underlying client
+supports an injected base address, but the live CLI does not expose it; do not
+treat this delivery as support for GitHub Enterprise Server or a different
+Enterprise Cloud API host.
+
+The remaining constraints are properties of GitHub and of a tenant.
 
 - **Classroom repositories must be organization-owned and private.** Rulesets,
   environments and Pages behave differently or are unavailable on a user-owned
@@ -383,17 +419,19 @@ Confirm each with the customer. None may be assumed.
 
 1. An organization exists in their tenant, and the provisioning account can
    create repositories in it.
-2. A class team exists, and every participant is a member — Lab 6's `CODEOWNERS`
-   review depends on it.
+2. A **Visible** class team exists, every participant is a member, and that team
+   has **Write granted directly on every class repository**. Lab 6's
+   `CODEOWNERS` review depends on the team's access; individual member access
+   does not substitute.
 3. Whether their tenant may publish a Pages site that is not publicly readable,
    and whether attendees can view their own.
 4. Whether their policy permits the workflows in `.github/workflows` to run, and
    on which runners.
 5. Licence allocation for participants.
-6. Who grants each participant **Write** access to their own repository. The run
-   does not grant it. **Lab 6 requires an explicit Admin exception on that
-   repository** for a learner creating a ruleset; an administrator-led
-   demonstration can keep attendee access at Write.
+6. Who grants the class team's **Write** access and each learner's temporary
+   **Admin exception on their own repository only** for Lab 6, then restores
+   Write. The run grants neither. An administrator-led demonstration can keep
+   attendee access at Write.
 
 ## 8. Handover route
 
@@ -406,12 +444,16 @@ Confirm each with the customer. None may be assumed.
    references** — see below.
 4. **Instructor** renders the class placeholders, then runs `plan`, reads it,
    and runs `apply --confirm` with `enablePages=false`.
-5. **Customer's organization admin** grants each learner access to their own
-   repository. Section 1: the run does not do this, and a learner without it
-   sees a `404`.
-6. **Customer's organization admin** establishes eligibility and configures
-   private Pages manually. The instructor runs the second-phase read-only plan
-   with both Pages flags true and records any live checks they cannot complete.
+5. **Customer's organization admin** grants the Visible class team Write
+   directly on every class repository and arranges the temporary own-repository
+   Admin exception for Lab 6, restoring Write afterwards. Section 1: the run
+   does not grant access.
+6. **Customer's organization admin** pauses both deployment workflows,
+   establishes eligibility and configures private Pages manually. The instructor
+   runs the second-phase read-only plan with both Pages flags true. Only after
+   it confirms private workflow sites does the administrator re-enable both
+   workflows and manually dispatch the initial main deployment, following
+   section 4. Record any live checks that cannot be completed.
 
 ### Cloning the bundle
 
@@ -457,11 +499,12 @@ are asserted by exit status, so the result does not depend on log wording.
 
 **No part of this tool has been run against GitHub.** The general request shapes
 were checked against the GitHub REST reference on 2026-09-09; the Pages GET,
-POST and PUT contract and visibility guidance were rechecked on 2026-09-16. The
-decision logic is tested against a fake, not a real tenant. The fake models site
-visibility independently of repository privacy and does not certify private
-publication. Live API and Git authentication, enterprise policy, attendee
-permissions, workflow execution, Pages deployment and access remain unverified.
+POST and PUT contract, visibility guidance and CODEOWNERS team-access
+requirements were rechecked on 2026-09-16. The decision logic is tested against
+a fake, not a real tenant. The fake models site visibility independently of
+repository privacy and does not certify private publication. Live API and Git
+authentication, enterprise policy, attendee permissions, workflow execution,
+Pages deployment and access remain unverified.
 
 Run the tests with:
 
