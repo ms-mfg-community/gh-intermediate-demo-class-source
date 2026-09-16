@@ -1,6 +1,12 @@
 /** @jest-environment node */
 import { spawnSync } from 'node:child_process'
-import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  writeFileSync
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -18,7 +24,14 @@ import {
   type GoldenFixture,
   type RenderReport
 } from '../tools/provisioning/fixture.js'
-import { git, lsRemote, readBlob } from '../tools/provisioning/git.js'
+import {
+  git,
+  lsRemote,
+  pushRefs,
+  readBlob,
+  tryGit
+} from '../tools/provisioning/git.js'
+import { formatReport, parseOptions } from '../tools/provisioning/cli.js'
 import {
   GitHubApi,
   nextPageLink,
@@ -32,7 +45,8 @@ import {
 import {
   Provisioner,
   type PlannedAction,
-  type ProvisioningConfig
+  type ProvisioningConfig,
+  type ProvisionerDeps
 } from '../tools/provisioning/github/provisioner.js'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
@@ -118,6 +132,7 @@ function harness(
     operator?: string
     organizations?: Record<string, string[]>
     config?: Partial<ProvisioningConfig>
+    deps?: Pick<ProvisionerDeps, 'push' | 'remoteRefs'>
   } = {}
 ): Harness {
   const participants = options.participants ?? ['alpha']
@@ -137,7 +152,7 @@ function harness(
   return {
     service,
     requests: service.requests,
-    provisioner: new Provisioner({ api }),
+    provisioner: new Provisioner({ api, ...options.deps }),
     config: {
       organization: ORG,
       classTeam: TEAM,
@@ -193,10 +208,11 @@ describe('class placeholders', () => {
   it.each([
     ['tools/provisioning/contract.ts'],
     ['docs/lab-contract.md'],
-    ['docs/provisioning.md']
+    ['docs/provisioning.md'],
+    ['labs/0-clone-the-repository.md']
   ])('leaves the tokens in %s verbatim', (path) => {
-    // Rendering these would rewrite the mechanism with one class's values.
-    // They are reported, never written.
+    // The mechanism stays generic. Lab 0 also keeps its URL templates: the
+    // learner substitutes both owner and repository from their own assigned URL.
     expect(renderReport.rendered).not.toContain(path)
     expect(renderReport.retained).toContain(path)
 
@@ -213,6 +229,7 @@ describe('class placeholders', () => {
     expect(renderReport.retained).toEqual([
       'docs/lab-contract.md',
       'docs/provisioning.md',
+      'labs/0-clone-the-repository.md',
       'tools/provisioning/contract.ts'
     ])
   })
@@ -434,6 +451,63 @@ describe('provisioning: apply seeds real repository state', () => {
 })
 
 describe('provisioning: rerunning preserves existing state', () => {
+  it('preserves learner commits, extra refs and edited resources on a rerun', async () => {
+    const first = harness({ participants: ['learner-work'] })
+    await first.provisioner.apply(first.config, { confirm: true })
+    const repository =
+      first.service.repositories[`${ORG}/gh-intermediate-learner-work`]
+    const head = git(classRepo, ['rev-parse', 'HEAD'])
+    const learnerCommit = git(classRepo, [
+      'commit-tree',
+      `${head}^{tree}`,
+      '-p',
+      head,
+      '-m',
+      'Learner work after provisioning'
+    ])
+    git(classRepo, [
+      'push',
+      '--quiet',
+      repository.cloneUrl,
+      `${learnerCommit}:refs/heads/main`,
+      `${learnerCommit}:refs/heads/feature/learner-work`
+    ])
+    repository.pulls[0].state = 'closed'
+    repository.pulls[0].title = 'Edited by the learner'
+    repository.issues.push({
+      number: 801,
+      title: 'Learner issue',
+      state: 'open',
+      user: 'learner'
+    })
+    repository.rulesets.push({
+      id: 802,
+      name: 'Learner ruleset',
+      target: 'branch',
+      enforcement: 'active'
+    })
+    repository.pages = { build_type: 'workflow', public: false }
+    const beforeRefs = lsRemote(classRepo, repository.cloneUrl)
+    const beforeRepository = structuredClone(repository)
+
+    const second = harness({
+      participants: ['learner-work'],
+      repositories: first.service.repositories,
+      config: { enablePages: true, privatePagesConfirmed: true }
+    })
+    const report = await second.provisioner.apply(second.config, {
+      confirm: true
+    })
+
+    expect(report.ok).toBe(true)
+    expect(second.requests.every((request) => request.method === 'GET')).toBe(
+      true
+    )
+    expect(lsRemote(classRepo, repository.cloneUrl)).toEqual(beforeRefs)
+    expect(repository).toEqual(beforeRepository)
+    expect(repository.pulls).toHaveLength(SEEDED_PULL_REQUESTS.length)
+  }, 600_000)
+
   it('adds only what is missing and creates no duplicates', async () => {
     const first = harness({ participants: ['epsilon'] })
     await first.provisioner.apply(first.config, { confirm: true })
@@ -665,36 +739,167 @@ describe('provisioning: refusals', () => {
 })
 
 describe('provisioning: GitHub Pages', () => {
-  it('refuses to publish without an asserted private eligibility', async () => {
-    const { provisioner, config } = harness({
-      participants: ['pages-unasserted'],
-      config: { enablePages: true }
+  it.each(['plan', 'apply'] as const)(
+    '%s blocks unasserted eligibility before any write or push',
+    async (mode) => {
+      const participant = `pages-unasserted-${mode}`
+      const { provisioner, config, service, requests } = harness({
+        participants: [participant, `${participant}-later`],
+        config: { enablePages: true, privatePagesConfirmed: false }
+      })
+      const report =
+        mode === 'plan'
+          ? await provisioner.plan(config)
+          : await provisioner.apply(config, { confirm: true })
+
+      expect(requests.every((request) => request.method === 'GET')).toBe(true)
+      expect(service.repositories).toEqual({})
+      expect(
+        existsSync(
+          join(workspace, 'remotes', `gh-intermediate-${participant}.git`)
+        )
+      ).toBe(false)
+      expect(report.pagesEligibility).toBe('not-asserted')
+      expect(pick(report.actions, 'pages')[0].status).toBe('blocked')
+    }
+  )
+
+  it.each(['plan', 'apply'] as const)(
+    '%s accepts only an existing private workflow site without changing it',
+    async (mode) => {
+      const participant = `private-pages-${mode}`
+      const name = `gh-intermediate-${participant}`
+      const repository = fakeRepository(ORG, name, bareRemote(name))
+      pushRefs(classRepo, repository.cloneUrl, intendedExportedRefs())
+      repository.pages = { build_type: 'workflow', public: false }
+      const beforeRefs = lsRemote(classRepo, repository.cloneUrl)
+      const { provisioner, config, requests } = harness({
+        participants: [participant],
+        repositories: { [`${ORG}/${name}`]: repository },
+        config: { enablePages: true, privatePagesConfirmed: true }
+      })
+      const report =
+        mode === 'plan'
+          ? await provisioner.plan(config)
+          : await provisioner.apply(config, { confirm: true })
+
+      expect(report.ok).toBe(true)
+      expect(report.pagesEligibility).toBe('operator-asserted')
+      expect(pick(report.actions, 'pages')[0].status).toBe('satisfied')
+      expect(
+        requests.filter((request) => request.url.endsWith('/pages'))
+      ).toEqual([expect.objectContaining({ method: 'GET' })])
+      expect(repository.pages).toEqual({
+        build_type: 'workflow',
+        public: false
+      })
+      expect(lsRemote(classRepo, repository.cloneUrl)).toEqual(beforeRefs)
+    },
+    600_000
+  )
+
+  const unsafeSites = [
+    ['public', { build_type: 'workflow', public: true }],
+    ['unknown', { build_type: 'workflow' }],
+    ['null', { build_type: 'workflow', public: null }],
+    ['string-false', { build_type: 'workflow', public: 'false' }],
+    ['legacy', { build_type: 'legacy', public: false }],
+    ['missing', undefined]
+  ] as const
+
+  it.each(
+    (['plan', 'apply'] as const).flatMap((mode) =>
+      unsafeSites.map(([label, site]) => ({ mode, label, site }))
+    )
+  )(
+    '$mode refuses $label Pages without creating or updating a site',
+    async ({ mode, label, site }) => {
+      const participant = `unsafe-pages-${label}-${mode}`
+      const name = `gh-intermediate-${participant}`
+      const repository = fakeRepository(ORG, name, bareRemote(name))
+      // Raw JSON deliberately represents incomplete or malformed API responses.
+      repository.pages =
+        site === undefined ? undefined : JSON.parse(JSON.stringify(site))
+      const beforeSite = structuredClone(repository.pages)
+      const { provisioner, config, service, requests } = harness({
+        participants: [participant, `${participant}-later`],
+        repositories: { [`${ORG}/${name}`]: repository },
+        config: { enablePages: true, privatePagesConfirmed: true }
+      })
+      const report =
+        mode === 'plan'
+          ? await provisioner.plan(config)
+          : await provisioner.apply(config, { confirm: true })
+
+      expect(
+        requests.filter(
+          (request) =>
+            request.url.endsWith('/pages') && request.method !== 'GET'
+        )
+      ).toEqual([])
+      expect(repository.pages).toEqual(beforeSite)
+      expect(pick(report.actions, 'pages', name)[0].status).toBe('blocked')
+      expect(pick(report.actions, 'pages', name)[0].detail).toMatch(
+        /admin|administrator/i
+      )
+      expect(report.ok).toBe(false)
+      expect(lsRemote(classRepo, repository.cloneUrl)).toEqual({})
+      expect(requests.every((request) => request.method === 'GET')).toBe(true)
+      expect(Object.keys(service.repositories)).toEqual([`${ORG}/${name}`])
+    },
+    600_000
+  )
+
+  it('plans missing Pages as a manual prerequisite, not an API create', async () => {
+    const { provisioner, config, requests } = harness({
+      participants: ['new-pages-plan'],
+      config: { enablePages: true, privatePagesConfirmed: true }
     })
     const report = await provisioner.plan(config)
 
-    expect(report.pagesEligibility).toBe('not-asserted')
     expect(pick(report.actions, 'pages')[0].status).toBe('blocked')
+    expect(pick(report.actions, 'pages')[0].detail).toMatch(/enablePages=false/)
+    expect(requests.every((request) => request.method === 'GET')).toBe(true)
   })
 
-  it('enables a workflow build once eligibility is asserted', async () => {
+  it('keeps initial provisioning independent of Pages when enablePages is false', async () => {
     const { provisioner, config, service, requests } = harness({
-      participants: ['pages'],
-      config: { enablePages: true, privatePagesConfirmed: true }
+      participants: ['pages-disabled'],
+      config: { enablePages: false, privatePagesConfirmed: false }
     })
     const report = await provisioner.apply(config, { confirm: true })
+    const repository =
+      service.repositories[`${ORG}/gh-intermediate-pages-disabled`]
 
     expect(report.ok).toBe(true)
-    expect(report.pagesEligibility).toBe('operator-asserted')
-    expect(service.repositories[`${ORG}/gh-intermediate-pages`].pages).toEqual({
-      build_type: 'workflow',
-      public: false
-    })
-
-    const call = requests.find(
-      (request) => request.method === 'POST' && request.url.endsWith('/pages')
+    expect(repository.pages).toBeUndefined()
+    expect(repository.pulls).toHaveLength(SEEDED_PULL_REQUESTS.length)
+    expect(
+      requests.filter((request) => request.url.endsWith('/pages'))
+    ).toEqual([])
+    expect(Object.keys(lsRemote(classRepo, repository.cloneUrl))).toEqual(
+      expect.arrayContaining(intendedExportedRefs())
     )
-    expect(JSON.parse(call?.body ?? '{}')).toEqual({ build_type: 'workflow' })
   }, 600_000)
+
+  it('does not make the fake site private just because its repository is private', async () => {
+    const name = 'gh-intermediate-fake-pages-control'
+    const repository = fakeRepository(ORG, name, bareRemote(name))
+    const service = new FakeGitHub({
+      repositories: { [`${ORG}/${name}`]: repository }
+    })
+    const api = new GitHubApi({ client: service, token: 'fake-token' })
+
+    await api.json(
+      'POST',
+      `/repos/${ORG}/${name}/pages`,
+      { build_type: 'workflow' },
+      [201]
+    )
+
+    expect(repository.private).toBe(true)
+    expect(repository.pages?.public).toBe(true)
+  })
 
   it('refuses to replace an existing Pages configuration', async () => {
     const name = 'gh-intermediate-legacy'
@@ -757,6 +962,403 @@ describe('provisioning: rulesets are opt-in', () => {
       enforcement: 'active',
       conditions: { ref_name: { include: ['refs/heads/main'], exclude: [] } }
     })
+  }, 600_000)
+})
+
+describe('provisioning: write mode stops at the first block', () => {
+  const deniedOperations = [
+    ['repository-read', 'GET', 'repository'],
+    ['repository-create', 'POST', 'repository'],
+    ['pulls-read', 'GET', 'pulls'],
+    ['pulls-create', 'POST', 'pulls'],
+    ['issues-read', 'GET', 'issues'],
+    ['issues-create', 'POST', 'issues'],
+    ['rulesets-read', 'GET', 'rulesets'],
+    ['rulesets-create', 'POST', 'rulesets'],
+    ['pages-read', 'GET', 'pages']
+  ] as const
+
+  it.each(deniedOperations)(
+    'stops after denied %s without trying another item, group or participant',
+    async (label, method, resource) => {
+      const participant = `blocked-${label}`
+      const name = `gh-intermediate-${participant}`
+      const path =
+        resource === 'repository'
+          ? method === 'POST'
+            ? `/orgs/${ORG}/repos`
+            : `/repos/${ORG}/${name}`
+          : `/repos/${ORG}/${name}/${resource}`
+      const { provisioner, config, service, requests } = harness({
+        participants: [participant, `${participant}-later`],
+        denied: [`${method} ${path}`],
+        config: {
+          issues: [
+            { title: 'First issue', body: 'First' },
+            { title: 'Second issue', body: 'Second' }
+          ],
+          rulesets: [
+            { name: 'first-ruleset', enforcement: 'active' },
+            { name: 'second-ruleset', enforcement: 'active' }
+          ],
+          enablePages: resource === 'pages',
+          privatePagesConfirmed: true
+        }
+      })
+      const report = await provisioner.apply(config, { confirm: true })
+      const deniedIndex = requests.findIndex(
+        (request) =>
+          request.method === method && new URL(request.url).pathname === path
+      )
+
+      expect(deniedIndex).toBeGreaterThanOrEqual(0)
+      expect(requests.slice(deniedIndex + 1)).toEqual([])
+      expect(service.repositories[`${ORG}/${name}-later`]).toBeUndefined()
+      expect(existsSync(join(workspace, 'remotes', `${name}-later.git`))).toBe(
+        false
+      )
+      expect(report.ok).toBe(false)
+      expect(report.actions.at(-1)?.status).toBe('blocked')
+    },
+    600_000
+  )
+
+  it('stops after a real local seed push denial and leaves the remote empty', async () => {
+    const participant = 'seed-denied'
+    const name = `gh-intermediate-${participant}`
+    const remote = bareRemote(name)
+    writeFileSync(join(remote, 'hooks', 'pre-receive'), '#!/bin/sh\nexit 1\n', {
+      mode: 0o755
+    })
+    const repository = fakeRepository(ORG, name, remote)
+    const { provisioner, config, service, requests } = harness({
+      participants: [participant, `${participant}-later`],
+      repositories: { [`${ORG}/${name}`]: repository },
+      config: {
+        issues: [{ title: 'Must not be created', body: '' }],
+        rulesets: [{ name: 'must-not-be-created', enforcement: 'active' }]
+      }
+    })
+    const report = await provisioner.apply(config, { confirm: true })
+
+    expect(lsRemote(classRepo, remote)).toEqual({})
+    expect(repository.pulls).toEqual([])
+    expect(repository.issues).toEqual([])
+    expect(repository.rulesets).toEqual([])
+    expect(service.repositories[`${ORG}/${name}-later`]).toBeUndefined()
+    expect(requests.every((request) => request.method === 'GET')).toBe(true)
+    expect(report.actions.at(-1)?.kind).toBe('seed-push')
+    expect(report.actions.at(-1)?.status).toBe('blocked')
+  }, 600_000)
+
+  it.each(['partial-push', 'verification-read-fails'] as const)(
+    'stops after %s without rolling back the refs already written',
+    async (failure) => {
+      let reads = 0
+      const { provisioner, config, service, requests } = harness({
+        participants: [failure, `${failure}-later`],
+        deps:
+          failure === 'partial-push'
+            ? {
+                push: (repo, remote) =>
+                  pushRefs(repo, remote, ['refs/heads/main'])
+              }
+            : {
+                remoteRefs: (repo, remote) => {
+                  reads += 1
+                  if (reads === 2)
+                    throw new Error('Local post-push verification denied')
+                  return lsRemote(repo, remote)
+                }
+              }
+      })
+      const report = await provisioner.apply(config, { confirm: true })
+      const repository =
+        service.repositories[`${ORG}/gh-intermediate-${failure}`]
+      const refs = Object.keys(lsRemote(classRepo, repository.cloneUrl))
+        .filter((ref) => ref !== 'HEAD')
+        .sort()
+
+      expect(refs).toEqual(
+        failure === 'partial-push'
+          ? ['refs/heads/main']
+          : [
+              ...intendedExportedRefs(),
+              `refs/tags/${fixture.bisect.anchorTag}^{}`
+            ].sort()
+      )
+      expect(repository.pulls).toEqual([])
+      expect(
+        service.repositories[`${ORG}/gh-intermediate-${failure}-later`]
+      ).toBeUndefined()
+      expect(
+        requests.filter((request) => request.method !== 'GET')
+      ).toHaveLength(1)
+      expect(report.actions.at(-1)?.kind).toBe('seed-push')
+      expect(report.actions.at(-1)?.status).toBe('blocked')
+      expect(formatReport(report)).toMatch(/earlier completed actions remain/i)
+      expect(formatReport(report)).toMatch(/no rollback/i)
+    },
+    600_000
+  )
+
+  it.each(['pulls', 'issues'] as const)(
+    'stops at ambiguous %s without writing the next item',
+    async (resource) => {
+      const participant = `ambiguous-write-${resource}`
+      const name = `gh-intermediate-${participant}`
+      const repository = fakeRepository(ORG, name, bareRemote(name))
+      const seed = SEEDED_PULL_REQUESTS[0]
+      for (const number of [901, 902]) {
+        if (resource === 'pulls')
+          repository.pulls.push({
+            number,
+            title: seed.title,
+            head: seed.head,
+            base: seed.base,
+            state: 'open',
+            user: OPERATOR
+          })
+        else
+          repository.issues.push({
+            number,
+            title: 'Ambiguous issue',
+            state: 'open',
+            user: OPERATOR
+          })
+      }
+      const { provisioner, config, service, requests } = harness({
+        participants: [participant, `${participant}-later`],
+        repositories: { [`${ORG}/${name}`]: repository },
+        config: {
+          issues: [
+            { title: 'Ambiguous issue', body: '' },
+            { title: 'Must not be created', body: '' }
+          ],
+          rulesets: [{ name: 'must-not-be-created', enforcement: 'active' }]
+        }
+      })
+      const report = await provisioner.apply(config, { confirm: true })
+      const blockedRead = requests.findIndex(
+        (request) =>
+          new URL(request.url).pathname === `/repos/${ORG}/${name}/${resource}`
+      )
+
+      expect(requests.slice(blockedRead + 1)).toEqual([])
+      expect(repository[resource]).toHaveLength(2)
+      expect(repository.rulesets).toEqual([])
+      expect(service.repositories[`${ORG}/${name}-later`]).toBeUndefined()
+      expect(report.ok).toBe(false)
+    },
+    600_000
+  )
+
+  it('keeps completed participants while leaving later participants untouched', async () => {
+    const { provisioner, config, service } = harness({
+      participants: ['completed-first', 'blocked-second', 'untouched-third'],
+      denied: [`POST /repos/${ORG}/gh-intermediate-blocked-second/pulls`]
+    })
+    const report = await provisioner.apply(config, { confirm: true })
+    const first = service.repositories[`${ORG}/gh-intermediate-completed-first`]
+    const second = service.repositories[`${ORG}/gh-intermediate-blocked-second`]
+
+    expect(first.pulls).toHaveLength(SEEDED_PULL_REQUESTS.length)
+    expect(Object.keys(lsRemote(classRepo, first.cloneUrl))).toEqual(
+      expect.arrayContaining(intendedExportedRefs())
+    )
+    expect(Object.keys(lsRemote(classRepo, second.cloneUrl))).toEqual(
+      expect.arrayContaining(intendedExportedRefs())
+    )
+    expect(
+      service.repositories[`${ORG}/gh-intermediate-untouched-third`]
+    ).toBeUndefined()
+    expect(formatReport(report)).toMatch(/earlier completed actions remain/i)
+    expect(formatReport(report)).toMatch(/no rollback/i)
+  }, 600_000)
+
+  it('allows a read-only plan to report later participants without claiming it stopped', async () => {
+    const name = 'gh-intermediate-plan-blocked'
+    const repository = fakeRepository(ORG, name, bareRemote(name), false)
+    const { provisioner, config, requests } = harness({
+      participants: ['plan-blocked', 'plan-later'],
+      repositories: { [`${ORG}/${name}`]: repository }
+    })
+    const report = await provisioner.plan(config)
+
+    expect(requests.every((request) => request.method === 'GET')).toBe(true)
+    expect(pick(report.actions, 'repository')).toHaveLength(2)
+    expect(formatReport(report)).not.toContain('Nothing further was attempted')
+    expect(formatReport(report)).toMatch(/read.only|no writes/i)
+  })
+})
+
+describe('provisioning CLI: safety values', () => {
+  /**
+   * Runs the real CLI locally, with live API authentication explicitly absent.
+   *
+   * @param args CLI arguments.
+   * @returns The child process result.
+   */
+  function cli(args: string[]) {
+    return spawnSync(
+      process.execPath,
+      [
+        '--import',
+        './tools/provisioning/register.mjs',
+        'tools/provisioning/cli.ts',
+        ...args
+      ],
+      { cwd: root, encoding: 'utf8', env: { ...process.env, GITHUB_TOKEN: '' } }
+    )
+  }
+
+  it.each(
+    ['enablePages', 'privatePagesConfirmed'].flatMap((key) =>
+      ['false', 'true', 0, 1, null, {}, []].map((value, index) => ({
+        key,
+        value,
+        index
+      }))
+    )
+  )(
+    'rejects $key=$value at the boundary before live authentication',
+    ({ key, value, index }) => {
+      const path = join(workspace, `invalid-${key}-${index}.json`)
+      writeFileSync(path, JSON.stringify({ ...harness().config, [key]: value }))
+
+      const result = cli(['plan', '--config', path])
+
+      expect(result.status).toBe(1)
+      expect(result.stderr).toContain(`Configuration ${key} must be a boolean`)
+      expect(result.stderr).not.toContain('GITHUB_TOKEN is not set')
+    }
+  )
+
+  it.each([
+    ['--confirm', 'false'],
+    ['--confirm', 'true'],
+    ['--confirm=false'],
+    ['--confirm=true'],
+    ['--confirm', 'false', '--confirm'],
+    ['--help', 'false'],
+    ['--help=false']
+  ])(
+    'rejects valued flags %j instead of coercing or ignoring them',
+    (...args) => {
+      expect(() => parseOptions(args)).toThrow(/flag.*value|value.*flag/i)
+    }
+  )
+
+  it('retains the explicit bare confirmation flag', () => {
+    expect(parseOptions(['--config', 'class.json', '--confirm'])).toEqual({
+      config: 'class.json',
+      confirm: true
+    })
+  })
+
+  it('uses read-only plan when only configuration options are supplied', () => {
+    const path = join(workspace, 'default-plan.json')
+    writeFileSync(
+      path,
+      JSON.stringify({ ...harness().config, enablePages: 'false' })
+    )
+
+    const result = cli(['--config', path])
+
+    expect(result.status).toBe(1)
+    expect(result.stderr).toContain(
+      'Configuration enablePages must be a boolean'
+    )
+  })
+
+  it.each([false, true])(
+    'rehearses the two-phase contract with enablePages=%s',
+    (enablePages) => {
+      const path = join(workspace, `dry-run-pages-${enablePages}.json`)
+      writeFileSync(
+        path,
+        JSON.stringify({
+          ...harness().config,
+          participants: [`cli-pages-${enablePages}`],
+          enablePages,
+          privatePagesConfirmed: enablePages
+        })
+      )
+
+      const result = cli(['dry-run', '--config', path])
+
+      expect(result.status).toBe(enablePages ? 1 : 0)
+      expect(result.stdout).toContain('local fake service')
+      const expected = enablePages
+        ? [/admin|administrator/i, /enablePages=false/]
+        : [/none blocked/]
+      for (const message of expected) expect(result.stdout).toMatch(message)
+    },
+    600_000
+  )
+})
+
+describe('remote Git authentication configuration', () => {
+  it.each(['read', 'push'] as const)(
+    'honors customer Git configuration for %s, but still isolates fixture commands',
+    (operation) => {
+      const remote = bareRemote(`auth-config-${operation}`)
+      const globalConfig = join(workspace, `git-auth-${operation}.config`)
+      // A local URL rewrite stands in for customer Git configuration. The
+      // unsupported scheme fails locally if that config is ignored.
+      const alias = 'fixture-auth://class'
+      writeFileSync(
+        globalConfig,
+        `[url "${remote.replace(/\\/g, '/')}"]\n\tinsteadOf = ${alias}\n`
+      )
+      const previous = process.env.GIT_CONFIG_GLOBAL
+      process.env.GIT_CONFIG_GLOBAL = globalConfig
+      try {
+        pushRefs(classRepo, operation === 'push' ? alias : remote, [
+          'refs/heads/main'
+        ])
+        const advertised = lsRemote(
+          classRepo,
+          operation === 'read' ? alias : remote
+        )
+        expect(advertised).toEqual(lsRemote(classRepo, remote))
+        expect(advertised['refs/heads/main']).toBe(
+          git(classRepo, ['rev-parse', 'refs/heads/main'])
+        )
+        expect(tryGit(classRepo, ['ls-remote', alias]).status).not.toBe(0)
+      } finally {
+        if (previous === undefined) delete process.env.GIT_CONFIG_GLOBAL
+        else process.env.GIT_CONFIG_GLOBAL = previous
+      }
+    },
+    600_000
+  )
+
+  it('does not let customer push.followTags widen the enumerated push', () => {
+    const source = join(workspace, 'follow-tags-source')
+    git(workspace, ['clone', '--quiet', '--no-hardlinks', classRepo, source])
+    git(source, [
+      'tag',
+      '--annotate',
+      '--message',
+      'Not for export',
+      'maintenance-only'
+    ])
+    const remote = bareRemote('follow-tags-target')
+    const globalConfig = join(workspace, 'follow-tags.config')
+    writeFileSync(globalConfig, '[push]\n\tfollowTags = true\n')
+    const previous = process.env.GIT_CONFIG_GLOBAL
+    process.env.GIT_CONFIG_GLOBAL = globalConfig
+    try {
+      pushRefs(source, remote, ['refs/heads/main'])
+      expect(Object.keys(lsRemote(source, remote)).sort()).toEqual([
+        'HEAD',
+        'refs/heads/main'
+      ])
+    } finally {
+      if (previous === undefined) delete process.env.GIT_CONFIG_GLOBAL
+      else process.env.GIT_CONFIG_GLOBAL = previous
+    }
   }, 600_000)
 })
 

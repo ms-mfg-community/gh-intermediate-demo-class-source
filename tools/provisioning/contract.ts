@@ -46,12 +46,14 @@ export const PLACEHOLDERS = {
  * anything. Which files a class configures is a curriculum fact, so it is
  * recorded here alongside the rest of the curriculum's facts.
  *
- * Derived from the labs. `labs/6-protect-main.md` is the only lab that prints
- * a token: Task 1 has the learner type `* @<organization>/<class-team>` into a
+ * Derived from the labs. `labs/6-protect-main.md` supplies class configuration:
+ * Task 1 has the learner type `* @<organization>/<class-team>` into a
  * `CODEOWNERS` file, and Task 3 prints the rejected-push output naming
  * `github.com/<organization>/<repository>`. Both are values a learner reads as
- * their own organization and team. Every other occurrence in the repository is
- * in `tools/provisioning/contract.ts`, `docs/lab-contract.md` or
+ * their own organization and team. Lab 0's clone URL templates deliberately
+ * retain the organization token: the learner substitutes both owner and
+ * repository from their assigned URL. The remaining occurrences are in
+ * `tools/provisioning/contract.ts`, `docs/lab-contract.md` or
  * `docs/provisioning.md`, which describe the mechanism and must keep their
  * tokens verbatim.
  *

@@ -1,9 +1,10 @@
 /**
  * Isolated Git invocation.
  *
- * Every command runs with the ambient system and global configuration
+ * Fixture commands run with the ambient system and global configuration
  * disabled, so a fixture built on one workstation is byte-identical to one
  * built on another regardless of the operator's personal Git settings.
+ * Remote reads and pushes retain that configuration for customer authentication.
  */
 import { execFileSync, spawnSync } from 'node:child_process'
 import { join } from 'node:path'
@@ -137,6 +138,26 @@ export function readBlob(
 }
 
 /**
+ * Runs a remote transfer using the operator's existing Git configuration.
+ *
+ * Credential helpers, enterprise URL rewrites, proxies and trust settings often
+ * live in system/global configuration. Fixture isolation must not disable those
+ * for ls-remote or push. Prompts remain disabled; authenticate before provisioning.
+ *
+ * @param repo Repository directory.
+ * @param args Remote Git arguments.
+ * @returns The trimmed standard output.
+ */
+function remoteGit(repo: string, args: string[]): string {
+  return git(repo, args, {
+    env: {
+      GIT_CONFIG_NOSYSTEM: process.env.GIT_CONFIG_NOSYSTEM,
+      GIT_CONFIG_GLOBAL: process.env.GIT_CONFIG_GLOBAL
+    }
+  })
+}
+
+/**
  * Lists the references a remote advertises.
  *
  * @param repo Any repository directory, used only to invoke Git.
@@ -144,7 +165,7 @@ export function readBlob(
  * @returns Reference names mapped to the object identifiers they point at.
  */
 export function lsRemote(repo: string, remote: string): Record<string, string> {
-  const output = git(repo, ['ls-remote', remote])
+  const output = remoteGit(repo, ['ls-remote', remote])
 
   if (output === '') return {}
 
@@ -163,7 +184,8 @@ export function lsRemote(repo: string, remote: string): Record<string, string> {
  * remote-tracking references, and a repository that has been pushed to GitHub
  * accumulates pull request references; a mirror push would carry both, and
  * would also delete anything on the remote that the source lacks. Enumerating
- * the references keeps the transfer additive and bounded.
+ * the references keeps the transfer additive and bounded. --no-follow-tags
+ * prevents the operator's push.followTags setting from adding unlisted tags.
  *
  * @param repo Repository to push from.
  * @param remote Address of the remote.
@@ -173,7 +195,12 @@ export function pushRefs(repo: string, remote: string, refs: string[]): void {
   if (refs.length === 0)
     throw new Error('Refusing to push an empty reference set')
 
-  git(repo, ['push', remote, ...refs.map((ref) => `${ref}:${ref}`)])
+  remoteGit(repo, [
+    'push',
+    '--no-follow-tags',
+    remote,
+    ...refs.map((ref) => `${ref}:${ref}`)
+  ])
 }
 
 /**

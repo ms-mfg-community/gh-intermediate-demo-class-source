@@ -720,10 +720,10 @@ export interface RenderReport {
   /**
    * Files still carrying a token afterwards, sorted.
    *
-   * Not a failure. After a successful render these are exactly the files that
-   * describe or implement the placeholder mechanism, and keeping their tokens
-   * intact is what lets a customer render the next class from the delivered
-   * bundle.
+   * Not a failure. These include the placeholder mechanism and Lab 0's URL
+   * templates, where the learner supplies both owner and repository from their
+   * assigned URL. Keeping the mechanism intact lets a customer render the next
+   * class from the delivered bundle.
    */
   retained: string[]
 }

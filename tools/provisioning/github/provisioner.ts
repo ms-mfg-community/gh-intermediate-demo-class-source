@@ -9,7 +9,9 @@
  * — a pull request by its head and base branches plus the seeding identity,
  * never by its title, because Lab 8 seeds two pairs that deliberately share a
  * title. Nothing is ever deleted, replaced wholesale, or downgraded to a
- * success-shaped default when a check cannot be completed.
+ * success-shaped default when a check cannot be completed. Write mode stops
+ * at the first blocked operation; completed actions are not rolled back.
+ * Pages is only inspected, never created or reconfigured.
  */
 import {
   DEFAULT_BRANCH,
@@ -62,12 +64,17 @@ export interface ProvisioningConfig {
   sourceRepository: string
   /** Login the credential must resolve to before anything is written. */
   expectedOperator: string
-  /** Whether to enable Pages through the REST API. */
+  /**
+   * Whether to require an existing private, workflow-based Pages site.
+   * False for initial provisioning; true for the post-admin verification.
+   * This flag never authorizes creating or changing a Pages site.
+   */
   enablePages?: boolean
   /**
    * Operator's assertion that this organization may publish a Pages site that
    * is not publicly readable. The API cannot establish it, so it is reported
-   * as asserted rather than verified, and Pages is skipped without it.
+   * as asserted rather than verified. When enablePages is true, its absence
+   * blocks the entire run before any writes. It is not site-visibility evidence.
    */
   privatePagesConfirmed?: boolean
   /** Rulesets to apply. Empty by default: Lab 6 is the learner's exercise. */
@@ -147,6 +154,7 @@ export class Provisioner {
 
   /**
    * Performs the actions a plan reports as missing.
+   * Stops at the first blocked operation without rolling back earlier writes.
    *
    * @param config Runtime inputs.
    * @param options Must set `confirm` to true.
@@ -179,14 +187,30 @@ export class Provisioner {
   ): Promise<ProvisioningReport> {
     const actions: PlannedAction[] = []
     const mode = write ? 'apply' : 'plan'
+    const pagesEligibility =
+      config.enablePages === true
+        ? config.privatePagesConfirmed === true
+          ? ('operator-asserted' as const)
+          : ('not-asserted' as const)
+        : undefined
+
+    if (pagesEligibility === 'not-asserted') {
+      actions.push({
+        kind: 'pages',
+        target: config.organization,
+        status: 'blocked',
+        detail:
+          'Private Pages eligibility has not been asserted for this organization. ' +
+          'Use enablePages=false for initial provisioning. An administrator must ' +
+          'establish eligibility and configure private Pages before you rerun with ' +
+          'enablePages=true and privatePagesConfirmed=true. The assertion is not ' +
+          'evidence of site visibility; the existing site must also pass the API check.'
+      })
+      return { mode, actions, pagesEligibility, ok: false }
+    }
+
     const prerequisites = await this.checkPrerequisites(config)
     actions.push(...prerequisites)
-
-    const pagesEligibility = config.enablePages
-      ? config.privatePagesConfirmed
-        ? ('operator-asserted' as const)
-        : ('not-asserted' as const)
-      : undefined
 
     if (prerequisites.some((action) => action.status === 'blocked'))
       return { mode, actions, pagesEligibility, ok: false }
@@ -195,6 +219,7 @@ export class Provisioner {
       const name = `${config.repositoryPrefix}-${participant}`
       const repository = await this.reconcileRepository(config, name, write)
       actions.push(repository.action)
+      if (write && repository.action.status === 'blocked') break
 
       if (!repository.repo) {
         // In plan mode the repository does not exist yet, so its contents
@@ -205,17 +230,33 @@ export class Provisioner {
         continue
       }
 
-      actions.push(
-        await this.reconcileSeedPush(config, name, repository.repo, write)
-      )
-      actions.push(...(await this.reconcilePullRequests(config, name, write)))
-      actions.push(...(await this.reconcileIssues(config, name, write)))
-      actions.push(...(await this.reconcileRulesets(config, name, write)))
+      // Verify Pages before seeding workflows or creating other resources.
+      // In the initial phase this check is explicitly disabled.
+      if (config.enablePages === true) {
+        const pages = await this.reconcilePages(config, name, repository.repo)
+        actions.push(pages)
+        if (write && pages.status === 'blocked') break
+      }
 
-      if (config.enablePages)
-        actions.push(
-          await this.reconcilePages(config, name, repository.repo, write)
-        )
+      const seed = await this.reconcileSeedPush(
+        config,
+        name,
+        repository.repo,
+        write
+      )
+      actions.push(seed)
+      if (write && seed.status === 'blocked') break
+
+      for (const reconcile of [
+        () => this.reconcilePullRequests(config, name, write),
+        () => this.reconcileIssues(config, name, write),
+        () => this.reconcileRulesets(config, name, write)
+      ]) {
+        const group = await reconcile()
+        actions.push(...group)
+        if (write && group.some((action) => action.status === 'blocked'))
+          return { mode, actions, pagesEligibility, ok: false }
+      }
     }
 
     return {
@@ -264,15 +305,7 @@ export class Provisioner {
       }))
     ]
 
-    if (config.enablePages)
-      actions.push({
-        kind: 'pages',
-        target: name,
-        status: config.privatePagesConfirmed ? 'create' : 'blocked',
-        detail: config.privatePagesConfirmed
-          ? 'Enable Pages with build_type workflow (eligibility: operator-asserted)'
-          : 'Private Pages eligibility has not been asserted for this organization'
-      })
+    if (config.enablePages === true) actions.push(this.missingPages(name))
 
     return actions
   }
@@ -512,8 +545,10 @@ export class Provisioner {
         detail: `Push ${intended.length} references into the empty ${name}`
       }
 
+    let after: Record<string, string>
     try {
       this.push(config.sourceRepository, repo.clone_url, intended)
+      after = this.remoteRefs(config.sourceRepository, repo.clone_url)
     } catch (error) {
       return {
         kind: 'seed-push',
@@ -523,7 +558,6 @@ export class Provisioner {
       }
     }
 
-    const after = this.remoteRefs(config.sourceRepository, repo.clone_url)
     const delivered = intended.filter((ref) => ref in after)
 
     return delivered.length === intended.length
@@ -593,6 +627,7 @@ export class Provisioner {
           status: 'blocked',
           detail: `Found ${matches.length} pull requests from ${seed.head} into ${seed.base}; ownership is ambiguous`
         })
+        if (write) break
         continue
       }
 
@@ -642,6 +677,7 @@ export class Provisioner {
           status: 'blocked',
           detail: describe(error)
         })
+        break
       }
     }
 
@@ -665,7 +701,19 @@ export class Provisioner {
     if (issues.length === 0) return []
 
     const path = `/repos/${config.organization}/${name}/issues`
-    const existing = await this.api.paginate<ApiIssue>(`${path}?state=all`)
+    let existing: ApiIssue[]
+    try {
+      existing = await this.api.paginate<ApiIssue>(`${path}?state=all`)
+    } catch (error) {
+      return [
+        {
+          kind: 'issue',
+          target: name,
+          status: 'blocked',
+          detail: describe(error)
+        }
+      ]
+    }
     const actions: PlannedAction[] = []
 
     for (const seed of issues) {
@@ -683,6 +731,7 @@ export class Provisioner {
           status: 'blocked',
           detail: `Found ${matches.length} issues titled ${seed.title}; ownership is ambiguous`
         })
+        if (write) break
         continue
       }
 
@@ -706,18 +755,28 @@ export class Provisioner {
         continue
       }
 
-      const created = await this.api.json<ApiIssue>(
-        'POST',
-        path,
-        { title: seed.title, body: seed.body },
-        [201]
-      )
-      actions.push({
-        kind: 'issue',
-        target,
-        status: 'create',
-        detail: `Opened issue #${created.number}`
-      })
+      try {
+        const created = await this.api.json<ApiIssue>(
+          'POST',
+          path,
+          { title: seed.title, body: seed.body },
+          [201]
+        )
+        actions.push({
+          kind: 'issue',
+          target,
+          status: 'create',
+          detail: `Opened issue #${created.number}`
+        })
+      } catch (error) {
+        actions.push({
+          kind: 'issue',
+          target,
+          status: 'blocked',
+          detail: describe(error)
+        })
+        break
+      }
     }
 
     return actions
@@ -815,6 +874,7 @@ export class Provisioner {
           status: 'blocked',
           detail: describe(error)
         })
+        break
       }
     }
 
@@ -822,90 +882,96 @@ export class Provisioner {
   }
 
   /**
-   * Enables Pages, refusing anything that could publish the site publicly.
+   * Reports the manual setup required when no Pages site can be read.
+   *
+   * @param name Repository name.
+   * @returns A blocked action, never a proposed Pages creation.
+   */
+  private missingPages(name: string): PlannedAction {
+    return {
+      kind: 'pages',
+      target: name,
+      status: 'blocked',
+      detail:
+        'No Pages site is visible. First provision with enablePages=false, then ' +
+        'have an organization administrator configure private Pages with GitHub ' +
+        'Actions (build_type=workflow, public=false) without publishing publicly. ' +
+        'Rerun with enablePages=true and privatePagesConfirmed=true. This tool ' +
+        'never creates a Pages site or changes its visibility.'
+    }
+  }
+
+  /**
+   * Checks an existing Pages site; never creates one or changes its visibility.
+   *
+   * Eligibility is asserted before the run starts. Site privacy is a separate
+   * check: only an explicit public=false with build_type=workflow is accepted.
    *
    * @param config Runtime inputs.
    * @param name Repository name.
    * @param repo The repository record.
-   * @param write Whether to perform writes.
    * @returns The action.
    */
   private async reconcilePages(
     config: ProvisioningConfig,
     name: string,
-    repo: ApiRepository,
-    write: boolean
+    repo: ApiRepository
   ): Promise<PlannedAction> {
     const path = `/repos/${config.organization}/${name}/pages`
 
-    if (!repo.private)
+    if (repo.private !== true)
       return {
         kind: 'pages',
         target: name,
         status: 'blocked',
-        detail: `${repo.full_name} is public; refusing to publish rather than fall back to public exposure`
+        detail: `${repo.full_name} is not private; ask an administrator to resolve the repository visibility. No Pages settings were changed.`
       }
 
-    if (!config.privatePagesConfirmed)
+    let existing:
+      | { build_type?: string | null; public?: boolean | null }
+      | undefined
+
+    try {
+      existing = await this.api.find<typeof existing>(path)
+    } catch (error) {
+      return {
+        kind: 'pages',
+        target: name,
+        status: 'blocked',
+        detail: `${describe(error)}; ask an administrator to verify Pages access and private configuration. No Pages settings were changed.`
+      }
+    }
+
+    if (!existing) return this.missingPages(name)
+
+    if (existing.public !== false)
       return {
         kind: 'pages',
         target: name,
         status: 'blocked',
         detail:
-          'Private Pages eligibility has not been asserted for this organization. The API cannot establish it, and it must not be inferred from an account name or an email domain.'
+          `Pages for ${name} is public or its visibility is unknown (public=${JSON.stringify(existing.public) ?? 'absent'}). ` +
+          'Ask an administrator to establish private publication and verify public=false. ' +
+          'Repository privacy and the eligibility assertion do not prove site privacy. ' +
+          'No Pages settings were changed.'
       }
 
-    let existing: { build_type?: string | null } | undefined
-
-    try {
-      existing = await this.api.find<{ build_type?: string | null }>(path)
-    } catch (error) {
+    if (existing.build_type !== 'workflow')
       return {
         kind: 'pages',
         target: name,
         status: 'blocked',
-        detail: describe(error)
-      }
-    }
-
-    if (existing)
-      return existing.build_type === 'workflow'
-        ? {
-            kind: 'pages',
-            target: name,
-            status: 'satisfied',
-            detail: `Pages already builds ${name} from a workflow`
-          }
-        : {
-            kind: 'pages',
-            target: name,
-            status: 'blocked',
-            detail: `Pages is already configured for ${name} with build_type ${existing.build_type}; refusing to replace an existing configuration`
-          }
-
-    if (!write)
-      return {
-        kind: 'pages',
-        target: name,
-        status: 'create',
-        detail: `POST ${path} with build_type workflow`
+        detail:
+          `Pages is already configured for ${name} with build_type ${existing.build_type}; ` +
+          'refusing to replace an existing configuration. Ask an administrator to ' +
+          'configure GitHub Actions publishing while keeping the site private.'
       }
 
-    try {
-      await this.api.json('POST', path, { build_type: 'workflow' }, [201])
-      return {
-        kind: 'pages',
-        target: name,
-        status: 'create',
-        detail: `Enabled Pages on ${name} with build_type workflow (eligibility: operator-asserted)`
-      }
-    } catch (error) {
-      return {
-        kind: 'pages',
-        target: name,
-        status: 'blocked',
-        detail: describe(error)
-      }
+    return {
+      kind: 'pages',
+      target: name,
+      status: 'satisfied',
+      detail: `Pages for ${name} reports build_type=workflow and public=false (eligibility: operator-asserted; configuration: API-read)`
     }
   }
 

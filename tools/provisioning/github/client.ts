@@ -9,7 +9,9 @@
  * Request shapes were checked against the GitHub REST reference on
  * 2026-09-09: `POST /orgs/{org}/repos`, `POST /repos/{owner}/{repo}/pulls`,
  * `POST /repos/{owner}/{repo}/issues`, `POST /repos/{owner}/{repo}/rulesets`
- * and `POST /repos/{owner}/{repo}/pages`.
+ * and their read endpoints. Pages GET fields were rechecked on 2026-09-16:
+ * `public` is in GET responses and PUT inputs, not POST creation inputs.
+ * Provisioning therefore only reads Pages; it never creates or updates a site.
  */
 
 /** Default REST API version, as documented on 2026-09-09. */
@@ -56,8 +58,8 @@ export class GitHubError extends Error {
 /**
  * A transport backed by the runtime's `fetch`.
  *
- * Never used by the test suite, which substitutes a local fake, and never
- * reached by the `plan` verb.
+ * Never used by the test suite, which substitutes a local fake. Both live
+ * `plan` and `apply` use it; plan sends only GET requests.
  */
 export class FetchHttpClient implements HttpClient {
   /**

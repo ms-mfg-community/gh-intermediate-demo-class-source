@@ -314,18 +314,30 @@ flow must use the same mapping.
 
 ### Inputs, all explicit
 
-| Input                   | Used for                                          |
-| ----------------------- | ------------------------------------------------- |
-| `organization`          | owner of every classroom repository               |
-| `classTeam`             | `CODEOWNERS` target substituted into Lab 6        |
-| `repositoryPrefix`      | per-student repository names                      |
-| `participants`          | one repository per entry                          |
-| `sourceRepository`      | local repository the references are pushed from   |
-| `expectedOperator`      | login the credential must resolve to              |
-| `enablePages`           | whether to call the Pages endpoint                |
-| `privatePagesConfirmed` | operator's assertion of private-Pages eligibility |
-| `rulesets`              | optional; empty by default                        |
-| `issues`                | optional; empty by default                        |
+| Input                   | Used for                                              |
+| ----------------------- | ----------------------------------------------------- |
+| `organization`          | owner of every classroom repository                   |
+| `classTeam`             | `CODEOWNERS` target substituted into Lab 6            |
+| `repositoryPrefix`      | per-student repository names                          |
+| `participants`          | one repository per entry                              |
+| `sourceRepository`      | local repository the references are pushed from       |
+| `expectedOperator`      | login the credential must resolve to                  |
+| `enablePages`           | verify an existing private, workflow-based Pages site |
+| `privatePagesConfirmed` | eligibility assertion only, not site-privacy evidence |
+| `rulesets`              | optional; empty by default                            |
+| `issues`                | optional; empty by default                            |
+
+Pages is configured manually by the customer's administrator, never created or
+changed by the provisioner. Initial provisioning uses `enablePages=false`. After
+manual private setup, a read-only plan with both Pages flags true requires the
+existing site to report `build_type=workflow` and `public=false`. A missing,
+public or visibility-unknown site blocks the check. The boolean flags must be
+actual JSON booleans. See the
+[two-phase route](./provisioning.md#two-phase-pages-contract).
+
+Attendee access is also manual: Write is the normal permission, with a
+repository-specific Admin exception for learners creating a ruleset in Lab 6 or
+an administrator-led demonstration instead. No provisioning run grants access.
 
 ### Placeholders
 
@@ -344,14 +356,14 @@ source whose class configuration is still unrendered.
 The list is enumerated rather than discovered by scanning for the tokens,
 because a content scan cannot tell a file that **carries** class configuration
 from one that **describes or implements** the mechanism — both contain the
-token. Three files are in the second category and keep their tokens verbatim
-through a render:
+token. These files keep their tokens verbatim through a render:
 
 | File                             | Why its tokens must survive                                                                       |
 | -------------------------------- | ------------------------------------------------------------------------------------------------- |
 | `tools/provisioning/contract.ts` | Defines `PLACEHOLDERS`; rewriting it leaves the delivered tooling unable to render the next class |
 | `docs/lab-contract.md`           | This document                                                                                     |
 | `docs/provisioning.md`           | The provisioning route                                                                            |
+| `labs/0-clone-the-repository.md` | Generic URL templates; the learner supplies both owner and repository from their assigned URL     |
 
 `render` reports both sets: what it substituted, and what it left carrying
 tokens by design. `findPlaceholders` remains a content scan and is the
@@ -365,7 +377,10 @@ that creates it, so a classroom tree ships without one.
 
 A build reports the seeded commit for each branch, the bisect anchor, the seeded
 bad commit, and the exported reference list. A provisioning run reports one
-action per resource, each marked `create`, `satisfied` or `blocked`.
+action per resource, each marked `create`, `satisfied` or `blocked`. In write
+mode, the first blocked operation stops subsequent items, groups and
+participants. Earlier completed writes remain; there is no rollback. A plan is
+read-only and can report more than one blocker.
 
 ## 8. Dependencies between labs
 

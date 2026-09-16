@@ -3,7 +3,8 @@
  *
  * `plan` is the default verb and never writes. `apply` writes only when it is
  * given `--confirm`, a configuration file naming a target, and a credential
- * that resolves to the operator the configuration expects.
+ * that resolves to the operator the configuration expects. It stops at the
+ * first blocked operation, with no rollback. Pages is read-only in both modes.
  *
  * Run with:
  * `node --import ./tools/provisioning/register.mjs tools/provisioning/cli.ts`
@@ -37,14 +38,19 @@ Commands that contact GitHub, using GITHUB_TOKEN:
   plan           --config <file>                  Report what would change
   apply          --config <file> --confirm        Create only what is missing
 
-plan is the default verb. apply refuses to run without --confirm: holding a
-credential is not authorization to use it against a classroom.`
+plan is the default verb when only options are supplied; no arguments shows help.
+apply refuses to run without the bare --confirm flag: holding a credential is
+not authorization to use it against a classroom.
+Use enablePages=false for initial provisioning. After an administrator configures
+private Pages manually, enablePages=true requires an existing workflow site with
+public=false and privatePagesConfirmed=true. Pages is never created or changed.`
 
 /**
  * Parses `--key value` and `--flag` arguments.
  *
  * @param argv Arguments after the command name.
  * @returns Option names mapped to their values.
+ * @throws If a boolean flag is given a value instead of standing alone.
  */
 export function parseOptions(argv: string[]): Record<string, string | true> {
   const options: Record<string, string | true> = {}
@@ -55,6 +61,16 @@ export function parseOptions(argv: string[]): Record<string, string | true> {
 
     const name = argument.slice(2)
     const next = argv[index + 1]
+    const flag = name.split('=')[0]
+
+    if (flag === 'confirm' || flag === 'help') {
+      if (name !== flag || (next !== undefined && !next.startsWith('--')))
+        throw new Error(
+          `Flag --${flag} does not accept a value; use --${flag} on its own`
+        )
+      options[flag] = true
+      continue
+    }
 
     if (next === undefined || next.startsWith('--')) options[name] = true
     else {
@@ -91,6 +107,7 @@ function required(
  *
  * @param path Path of the JSON configuration.
  * @returns The parsed configuration, with paths resolved.
+ * @throws If required inputs are missing or a supplied safety flag is not boolean.
  */
 function loadConfig(path: string): ProvisioningConfig {
   const config = JSON.parse(readFileSync(path, 'utf8')) as ProvisioningConfig
@@ -107,6 +124,12 @@ function loadConfig(path: string): ProvisioningConfig {
 
   if (!Array.isArray(config.participants) || config.participants.length === 0)
     throw new Error('Configuration lists no participants')
+
+  for (const key of ['enablePages', 'privatePagesConfirmed'] as const)
+    if (config[key] !== undefined && typeof config[key] !== 'boolean')
+      throw new Error(
+        `Configuration ${key} must be a boolean (true or false), not a string or other value`
+      )
 
   return { ...config, sourceRepository: resolve(config.sourceRepository) }
 }
@@ -135,8 +158,14 @@ export function formatReport(report: ProvisioningReport): string {
   lines.push(
     report.ok
       ? `\n${report.actions.length} actions, none blocked.`
-      : `\n${report.actions.length} actions, ${blocked} blocked. Nothing further was attempted.`
+      : `\n${report.actions.length} actions, ${blocked} blocked.`
   )
+  if (report.mode === 'plan')
+    lines.push('Read-only plan; no writes were attempted.')
+  else if (!report.ok)
+    lines.push(
+      'Stopped at the first blocked operation. Earlier completed actions remain; no rollback is provided.'
+    )
 
   return lines.join('\n')
 }
@@ -165,7 +194,9 @@ function liveProvisioner(): Provisioner {
  * @returns The process exit code.
  */
 export async function main(argv: string[]): Promise<number> {
-  const [command = 'help', ...rest] = argv
+  const [first, ...remaining] = argv
+  const command = first?.startsWith('--') ? 'plan' : (first ?? 'help')
+  const rest = first?.startsWith('--') ? argv : remaining
   const options = parseOptions(rest)
 
   if (command === 'help' || options.help === true) {
@@ -247,7 +278,10 @@ export async function main(argv: string[]): Promise<number> {
           'This was a rehearsal against a local fake service and local ' +
           'repositories. It exercises the request shapes, the reference push ' +
           'and the decision logic. It proves nothing about the target ' +
-          'organization, its permissions or its Pages eligibility.\n'
+          'organization, its permissions or its Pages eligibility or visibility.\n' +
+          'The fake starts with no Pages sites: enablePages=true blocks on manual ' +
+          'setup rather than simulating private publication. Use enablePages=false ' +
+          'to rehearse initial provisioning.\n'
       )
       return report.ok ? 0 : 1
     } finally {

@@ -17,7 +17,8 @@ export interface FakeRepository {
   pulls: FakePullRequest[]
   issues: FakeIssue[]
   rulesets: FakeRuleset[]
-  pages?: { build_type: string; public: boolean }
+  /** Site visibility is independent of repository visibility; omission is unknown. */
+  pages?: { build_type: string; public?: boolean | null }
 }
 
 export interface FakePullRequest {
@@ -240,7 +241,9 @@ export class FakeGitHub implements HttpClient {
 
       repository.pages = {
         build_type: body.build_type ?? 'legacy',
-        public: !repository.private
+        // Model a tenant where creation exposes the site. A private repository
+        // is not a privacy control for Pages, and POST has no public parameter.
+        public: true
       }
       return this.reply(201, { ...repository.pages, status: null })
     }
