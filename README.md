@@ -1,10 +1,8 @@
 # GitHub Intermediate - Project Repository
 
-![Continuous Integration](https://github.com/githubschool/gh-github-intermediate-template/actions/workflows/continuous-integration.yml/badge.svg)
-![Continuous Delivery](https://github.com/githubschool/gh-github-intermediate-template/actions/workflows/continuous-delivery.yml/badge.svg)
-![CodeQL](https://github.com/githubschool/gh-github-intermediate-template/actions/workflows/codeql.yml/badge.svg)
+![Continuous Integration](https://github.com/ms-mfg-community/gh-intermediate-demo-class-source/actions/workflows/continuous-integration.yml/badge.svg)
+![Continuous Delivery](https://github.com/ms-mfg-community/gh-intermediate-demo-class-source/actions/workflows/continuous-delivery.yml/badge.svg)
 ![Coverage](./badges/coverage.svg)
-![Linter](https://github.com/githubschool/gh-github-intermediate-template/actions/workflows/linter.yml/badge.svg)
 
 This is your project repository for the GitHub Intermediate training offering.
 Within this repository, you will find a game that you will extend, repair and
@@ -48,6 +46,16 @@ Classroom repositories are provisioned, not generated from a template. See:
   Node.js section before your first run.
 - [Lab Contract](./docs/lab-contract.md) — the exact repository state each lab
   assumes, what the learner creates, and the expected instructional failures.
+
+### Using this repository
+
+This repository is the course source, not a classroom repository. Fork it to run
+a class or to make changes: branch creation and direct pushes are restricted to
+the [code owners](./.github/CODEOWNERS), so contributions come back as a pull
+request from your fork.
+
+Do not point learners at this repository. Provision per-student repositories
+from it as described in [Provisioning](./docs/provisioning.md).
 
 ## Reference
 

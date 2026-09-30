@@ -34,8 +34,8 @@ the version number in the `package.json` file.
 
    ```jsonc
    {
-     "name": "@githubschool/gh-github-intermediate-template",
-     "description": "GitHub Intermediate Training - Template",
+     "name": "gh-intermediate-demo-class-source",
+     "description": "GitHub Intermediate Training - class source repository",
      "version": "2.0.0",
      // ...
    ```

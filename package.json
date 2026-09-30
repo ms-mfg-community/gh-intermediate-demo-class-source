@@ -1,7 +1,8 @@
 {
-  "name": "@githubschool/gh-github-intermediate-template",
-  "description": "GitHub Intermediate Training - Template",
+  "name": "gh-intermediate-demo-class-source",
+  "description": "GitHub Intermediate Training - class source repository",
   "version": "0.1.0",
+  "private": true,
   "scripts": {
     "bundle": "npm run format:write && npm run package",
     "ci-test": "node --experimental-vm-modules --no-warnings node_modules/jest/bin/jest.js",
@@ -19,14 +20,14 @@
   "type": "module",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/githubschool/gh-github-intermediate-template.git"
+    "url": "git+https://github.com/ms-mfg-community/gh-intermediate-demo-class-source.git"
   },
   "bugs": {
-    "url": "https://github.com/githubschool/gh-github-intermediate-template/issues"
+    "url": "https://github.com/ms-mfg-community/gh-intermediate-demo-class-source/issues"
   },
-  "homepage": "https://github.com/githubschool/gh-github-intermediate-template#readme",
+  "homepage": "https://github.com/ms-mfg-community/gh-intermediate-demo-class-source#readme",
   "keywords": [],
-  "author": "Nick Alteen <ncalteen@github.com>",
+  "author": "ms-mfg-community",
   "license": "MIT",
   "engines": {
     "node": ">=22"

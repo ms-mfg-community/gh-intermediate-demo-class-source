@@ -1,0 +1,7 @@
+# Code owners for this repository.
+#
+# Every change to this repository requires review from an owner listed here.
+# Branch creation and direct pushes are additionally restricted by a repository
+# ruleset; contributors work from a fork and open a pull request.
+
+* @johnhain-msft
