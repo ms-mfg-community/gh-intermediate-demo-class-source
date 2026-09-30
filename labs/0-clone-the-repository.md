@@ -20,11 +20,10 @@ machine, and Git able to prove who you are when it talks to GitHub. From Lab 1
 onwards you'll be pushing your work back, so a clone that you can't push from
 isn't finished.
 
-There are two ways to authenticate, and your organization decides which one is
-open to you. **Task 3** sets up a fine-grained personal access token and clones
-over HTTPS. **Task 4** sets up an SSH key instead. Do one of them, not both. If
-you don't know which applies to you, start with Task 3 — Task 4 is the fallback
-for when your organization restricts tokens.
+There are two ways to authenticate. **Task 3** clones over HTTPS and is what
+most people should do. **Task 4** sets up an SSH key instead. Do one of them,
+not both, and start with Task 3. If your corporate network blocks both, there's
+a fallback section after Task 4.
 
 ## Task 1: Check Your Tools
 
@@ -74,7 +73,7 @@ for when your organization restricts tokens.
 ## Task 2: Confirm You Have Access
 
 Do this before you create any credentials. If your account can't see the
-repository in a browser, no token or key will fix it, and that's something your
+repository in a browser, no credential will fix it, and that's something your
 instructor has to sort out.
 
 1. In your browser, sign in to GitHub
@@ -96,48 +95,24 @@ instructor has to sort out.
 
    You'll substitute those two values into the commands below.
 
-## Task 3: Clone over HTTPS with a Personal Access Token
+## Task 3: Clone over HTTPS
 
 Skip to Task 4 if you're using SSH.
 
-Git uses a personal access token in place of a password when you work over
-HTTPS. A token is better than a password because you control exactly what it can
-reach, you can give it an expiry date, and you can revoke it without changing
-anything else about your account.
+GitHub stopped accepting account passwords for Git in August 2021, so something
+has to hand over a credential when Git talks to GitHub over HTTPS. Normally that
+something is a _credential helper_ — a small program that opens a browser, lets
+you sign in the way you always do, then stores the result and reuses it silently
+from then on. You never see a token or look after one.
 
-1. Navigate to GitHub.com and select your profile photo, then **Settings**
-1. In the left sidebar, click **Developer settings**
-1. Expand **Personal access tokens**, then click **Fine-grained tokens**
-1. Click **Generate new token**
-1. In the **Token name** field, enter a name you'll recognize later, e.g.
-   `github-intermediate-training`
-1. Set **Expiration** to a date shortly after the course ends
-1. Set **Resource owner** to the **organization** that owns your class
-   repository
+On Windows you almost certainly have one already:
+[Git Credential Manager ships with Git for Windows](https://github.com/git-ecosystem/git-credential-manager/blob/main/docs/install.md#windows)
+and is the default credential helper the installer selects for you. If you
+installed Git from git-scm.com and didn't change that screen, it's there. macOS
+and Linux don't include it — it's a separate install on those platforms.
 
-   This is the step people get wrong. A token whose resource owner is your own
-   account cannot reach a repository owned by an organization, however many
-   permissions you give it.
-
-1. Under **Repository access**, select **Only select repositories**, then choose
-   your class repository
-1. Under **Permissions**, expand **Repository permissions** and set:
-   - **Contents:** Read and write
-   - **Pull requests:** Read and write
-   - **Metadata:** Read-only (this is selected for you and can't be removed)
-
-1. Click **Generate token**
-1. Copy the token immediately and paste it somewhere safe
-
-   You can't view it again after you leave the page. Treat it like a password.
-
-1. Check whether the token is active or pending
-
-   If your organization requires an owner to approve token access — which is
-   GitHub's default for organization-owned resources — your token is listed as
-   **Pending** and will not work until it's approved. Ask for approval now
-   rather than on the morning of the session. If approval isn't going to happen,
-   use Task 4 instead.
+So try the clone first. If a helper is there, you're finished in two commands,
+with nothing to create, copy, or keep safe.
 
 1. In your terminal, change to the directory you want the project in
 
@@ -153,23 +128,41 @@ anything else about your account.
    git clone https://github.com/<organization>/<repository>.git
    ```
 
-1. When prompted, enter your credentials
+1. Sign in when you're asked
 
-   At **Username**, enter your GitHub username. At **Password**, paste your
-   personal access token — not your account password. Nothing appears on screen
-   as you paste it; that's expected.
+   A browser window or a credential manager dialog should open. Sign in the way
+   you normally sign in to GitHub, including single sign-on and 2FA if your
+   organization uses them. The clone then carries on by itself.
 
-   Depending on your machine, a browser window or a credential manager dialog
-   may open instead of a terminal prompt. Either is fine.
+1. Decide where to go next
+   - **The clone succeeded.** Continue to Task 5 — there's nothing else to set
+     up.
+   - **Git printed `Username for 'https://github.com':` in the terminal.** You
+     have no credential helper. Anything you type as a password will be
+     rejected, because GitHub no longer accepts account passwords here. Press
+     **Ctrl+C** and go to Task 4.
+   - **No browser opened, or the sign-in couldn't finish.** This is normal on a
+     machine with no browser, such as a server you've connected to over SSH, and
+     happens occasionally behind a proxy that inspects TLS traffic. Go to
+     Task 4.
 
-1. Continue to Task 5
+   Task 4 uses an SSH key and needs no extra software. If you'd rather stay on
+   HTTPS, install a credential helper — either
+   [Git Credential Manager](https://github.com/git-ecosystem/git-credential-manager/blob/main/docs/install.md)
+   or the [GitHub CLI](https://cli.github.com) — and run the clone again. If
+   Task 4 is blocked too, see
+   [If Your Network Blocks Both](#if-your-network-blocks-both).
 
 ## Task 4: Clone over SSH with an SSH Key
 
-Do this task only if you didn't complete Task 3. An SSH key is the alternative
-when your organization restricts personal access tokens. Git authenticates with
-a key pair instead of a token, and you aren't prompted for credentials on every
-clone or push.
+Do this task only if Task 3 didn't work. An SSH key is the alternative when your
+machine has no credential helper, and it needs nothing you don't already have.
+Git authenticates with a key pair, and you aren't prompted for credentials on
+every clone or push.
+
+If a step here fails with a connection timeout rather than a permissions error,
+your network is blocking outbound SSH — skip to
+[If Your Network Blocks Both](#if-your-network-blocks-both).
 
 1. Check whether you already have a key
 
@@ -254,6 +247,82 @@ clone or push.
    ```
 
    You won't be asked for a username or a password.
+
+## If Your Network Blocks Both
+
+Most people can skip this section entirely. Read it only if Task 3 couldn't
+complete **and** Task 4 failed with a connection timeout like
+`ssh: connect to host github.com port 22: Connection timed out`. That means your
+corporate network blocks outbound SSH, which is common.
+
+Try these in order and stop at the first one that works.
+
+### First, try SSH over the HTTPS port
+
+Many firewalls that block port 22 still allow 443, and GitHub accepts SSH there.
+
+1. Test the connection
+
+   ```bash
+   ssh -T -p 443 git@ssh.github.com
+   ```
+
+   The hostname is `ssh.github.com`, not `github.com`.
+
+1. If you see the `Hi <username>!` greeting, tell SSH to always use that route
+
+   Add this to `~/.ssh/config`, creating the file if it doesn't exist:
+
+   ```text
+   Host github.com
+       Hostname ssh.github.com
+       Port 443
+       User git
+   ```
+
+1. Retry the clone command from Task 4
+
+Proxies that inspect traffic can still interfere with this. If it doesn't work,
+continue below.
+
+### Last resort: a personal access token
+
+Use this only if everything above is blocked. It's the one route that needs no
+new software and no outbound SSH — just HTTPS and a browser. You generate a
+credential by hand and type it in place of a password.
+
+Be aware this path can stall: organizations can refuse tokens outright, or hold
+yours for an owner's approval. Start it early, and tell your instructor you're
+on it.
+
+1. On GitHub.com, go to your profile photo → **Settings** → **Developer
+   settings** → **Personal access tokens** → **Fine-grained tokens**, then click
+   **Generate new token**
+1. Name it something you'll recognize, and set **Expiration** to shortly after
+   the course ends
+1. Set **Resource owner** to the **organization** that owns your class
+   repository
+
+   This is the step people get wrong. A token owned by your own account cannot
+   reach an organization's repository, no matter what permissions you give it.
+
+1. Under **Repository access**, choose **Only select repositories** and pick
+   your class repository
+1. Under **Repository permissions**, set **Contents** to **Read and write**
+
+   That's the only one you need. Contents covers `git clone` and `git push`, and
+   **Metadata: Read-only** is added for you. You open pull requests in your
+   browser as yourself, so the token is never involved in them.
+
+1. Click **Generate token**, then copy it somewhere safe straight away — you
+   can't view it again. Treat it like a password.
+1. If the token shows as **Pending**, an organization owner has to approve it
+   before it will work. Ask now, not on the morning of the session.
+1. Clone using the HTTPS URL from Task 3
+
+   At **Username** enter your GitHub username. At **Password** paste the token,
+   not your account password. Nothing appears on screen as you paste; that's
+   expected.
 
 ## Task 5: Verify the Clone
 
@@ -360,10 +429,12 @@ Most failures are one of the following.
 | ----------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `git: command not found`, or `'git' is not recognized`                  | Git isn't installed, or your terminal was open before it was installed. Install from [git-scm.com](https://git-scm.com/downloads), then close the terminal and open a new one                                                                                                                                                                                                                                         |
 | **404** on the repository page while signed in                          | Your account hasn't been granted access, or you're signed in with the wrong account. Nothing local will fix this — report it                                                                                                                                                                                                                                                                                          |
-| `remote: Repository not found` over HTTPS                               | The token can't see the repository. Confirm its **Resource owner** is the organization, that the repository is listed under **Repository access**, and that the token isn't **Pending** approval                                                                                                                                                                                                                      |
-| `remote: Invalid username or password`, or an endless credential prompt | You entered your account password instead of the token, or an old credential is cached. On Windows, open **Credential Manager → Windows Credentials** and remove the `git:https://github.com` entry. On macOS, open **Keychain Access** and delete the `github.com` internet password. Then clone again                                                                                                               |
-| Your token is listed as **Pending**                                     | An organization owner has to approve it. Ask now, or switch to an SSH key (Task 4)                                                                                                                                                                                                                                                                                                                                    |
+| Git asks for `Username` and `Password` in the terminal                  | There's no credential helper on your machine, and GitHub stopped accepting account passwords in 2021, so no password will work. Press **Ctrl+C** and use Task 4                                                                                                                                                                                                                                                       |
+| `remote: Repository not found` over HTTPS                               | You're signed in as the wrong account, or your account hasn't been granted access — see the **404** row. If you're using a token, check that its **Resource owner** is the organization and that your repository is listed under **Repository access**                                                                                                                                                                |
+| `remote: Invalid username or password`, or an endless credential prompt | An old credential is cached. On Windows, open **Credential Manager → Windows Credentials** and remove the `git:https://github.com` entry. On macOS, open **Keychain Access** and delete the `github.com` internet password. Then clone again                                                                                                                                                                          |
 | `Permission denied (publickey)`                                         | The key isn't loaded, isn't registered on GitHub, or isn't authorized for the organization. Re-run `ssh-add ~/.ssh/id_ed25519`, then `ssh -T git@github.com`                                                                                                                                                                                                                                                          |
+| `ssh: connect to host github.com port 22: Connection timed out`         | Your network blocks outbound SSH. See [If Your Network Blocks Both](#if-your-network-blocks-both)                                                                                                                                                                                                                                                                                                                     |
+| Your token is listed as **Pending**                                     | An organization owner has to approve it before it will work. Ask now rather than waiting                                                                                                                                                                                                                                                                                                                              |
 | `Could not resolve host: github.com`, or the clone hangs                | Usually a corporate proxy. Set it, replacing the address with the one your IT team gives you: `git config --global http.proxy http://PROXY_SERVER_ADDRESS:8080`. If the proxy needs credentials, use `http://USERNAME@PROXY_SERVER_ADDRESS:8080` and let Git prompt for the password — never put a password in the command. Remove the setting at the end of the course with `git config --global --unset http.proxy` |
 | `SSL certificate problem: unable to get local issuer certificate`       | Your network inspects TLS traffic and Git doesn't trust its certificate. Ask your IT team for the corporate CA bundle and point Git at it with `git config --global http.sslCAInfo <path>`. Don't turn certificate verification off                                                                                                                                                                                   |
 | The page opens but is unstyled, or the grid is missing                  | You opened the wrong file, or you're not in the repository root. Run `git status` and confirm you're inside the clone, then open `index.html` from that directory                                                                                                                                                                                                                                                     |
